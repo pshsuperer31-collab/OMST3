@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OMST™ 궁합 정밀 리포트</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="ichingDB.js"></script>
 <script src="db12.js"></script>
 <style>
 :root{
@@ -458,20 +459,71 @@ const TRIGRAM = {
 
 const ORDER = ['건','태','리','진','손','감','간','곤'];
 
+// ─── 한글 조사 자동 조절 ───
+function hasJongseong(ch){
+  const code = ch.charCodeAt(0);
+  if(code < 0xAC00 || code > 0xD7A3) return false;
+  return ((code - 0xAC00) % 28) !== 0;
+}
+function josa(word, pair){
+  // pair 예: '을/를', '이/가', '은/는', '과/와'
+  const [withJong, withoutJong] = pair.split('/');
+  // word의 마지막 한글 음절 기준
+  let lastKorean = null;
+  for(let i = word.length - 1; i >= 0; i--){
+    const c = word[i];
+    if(c >= '\uAC00' && c <= '\uD7A3'){ lastKorean = c; break; }
+  }
+  if(!lastKorean) return withoutJong;
+  return hasJongseong(lastKorean) ? withJong : withoutJong;
+}
+
 // binary → 괘명 역변환
 const BINARY_TO_NAME = {};
 ORDER.forEach(k => { BINARY_TO_NAME[TRIGRAM[k].binary] = k; });
 
 // ─── 8괘 지배시 인물 키워드 (ver1의 MAIN CHARACTER 톤) ───
 const TRIGRAM_PERSONA = {
-  '건': {title:'天의 주권자', brief:'강건한 의지로 스스로 길을 내는 선구자'},
-  '태': {title:'澤의 감응가', brief:'부드러운 입담과 공감으로 공기를 바꾸는 소통가'},
-  '리': {title:'火의 통찰가', brief:'명민한 지성으로 세상의 이치를 꿰뚫는 분석가'},
-  '진': {title:'雷의 개척자', brief:'정체를 깨고 새로움을 향해 돌진하는 혁신가'},
-  '손': {title:'風의 지략가', brief:'섬세한 침투와 조율로 실리를 얻는 전략가'},
-  '감': {title:'水의 사색가', brief:'깊이 잠겨 본질을 길어 올리는 구도자'},
-  '간': {title:'山의 중심자', brief:'뿌리 깊은 고요로 흔들리지 않는 안정자'},
-  '곤': {title:'地의 포용자', brief:'너른 품으로 모두를 품어 기르는 어머니'},
+  '건': {
+    title:'天의 주권자',
+    brief:'강건한 의지로 스스로 길을 내는 선구자',
+    summary:'세상의 중심에 서서 스스로를 단련하며 멈추지 않고 정진하는, 불굴의 리더십을 지닌 존재입니다.'
+  },
+  '태': {
+    title:'澤의 감응가',
+    brief:'부드러운 입담과 공감으로 공기를 바꾸는 소통가',
+    summary:'웃음과 대화로 사람들의 마음을 열고, 감성의 교류 속에서 자신과 타인을 함께 치유하는 존재입니다.'
+  },
+  '리': {
+    title:'火의 통찰가',
+    brief:'명민한 지성으로 세상의 이치를 꿰뚫는 분석가',
+    summary:'어둠 속에서도 본질을 비추는 밝은 지성으로, 논리와 통찰을 통해 빛나는 성취를 만들어내는 존재입니다.'
+  },
+  '진': {
+    title:'雷의 개척자',
+    brief:'정체를 깨고 새로움을 향해 돌진하는 혁신가',
+    summary:'잠자던 판을 깨뜨리고 새로운 시대를 여는, 폭발적인 에너지와 도전 정신을 지닌 존재입니다.'
+  },
+  '손': {
+    title:'風의 지략가',
+    brief:'섬세한 침투와 조율로 실리를 얻는 전략가',
+    summary:'바람처럼 부드럽게 스며들어 결국 원하는 바를 이루는, 지략과 유연성을 겸비한 존재입니다.'
+  },
+  '감': {
+    title:'水의 사색가',
+    brief:'깊이 잠겨 본질을 길어 올리는 구도자',
+    summary:'깊은 물처럼 고요히 내면을 탐구하며, 위기 속에서도 지혜를 길어 올리는 사색가적 존재입니다.'
+  },
+  '간': {
+    title:'山의 중심자',
+    brief:'뿌리 깊은 고요로 흔들리지 않는 안정자',
+    summary:'산처럼 묵묵히 제자리를 지키며, 변화 속에서도 중심을 잃지 않는 단단한 안정감을 지닌 존재입니다.'
+  },
+  '곤': {
+    title:'地의 포용자',
+    brief:'너른 품으로 모두를 품어 기르는 어머니',
+    summary:'대지처럼 만물을 품어 기르며, 헌신과 수용으로 관계의 토대를 만드는 따뜻한 존재입니다.'
+  },
 };
 
 // ─── 64괘명 테이블 (표준 전승) ───
@@ -565,18 +617,100 @@ function findResonanceAndClash(pctA, pctB){
   return { resonance, clash };
 }
 
+// ─── 각 괘의 기질 키워드 (오행 풀이용) ───
+const TRIGRAM_TRAIT = {
+  '건': '목적지향적 추진력',
+  '태': '유쾌한 소통과 감응',
+  '리': '명민한 통찰과 비판',
+  '진': '즉각적 돌파와 도전',
+  '손': '섬세한 조율과 침투',
+  '감': '깊은 사색과 응축',
+  '간': '신중한 관망과 안정',
+  '곤': '너그러운 포용과 헌신',
+};
+
 // ─── 오행 상생상극 ───
 const WUXING_SHENG = {'木':'火','火':'土','土':'金','金':'水','水':'木'};
 const WUXING_KE    = {'木':'土','土':'水','水':'火','火':'金','金':'木'};
 
 function wuxingRelation(a, b){
   const wa = TRIGRAM[a].wuxing, wb = TRIGRAM[b].wuxing;
-  if(wa === wb) return {type:'비화(比和)', desc:'같은 기운의 공명', color:'var(--gold)', score:70};
-  if(WUXING_SHENG[wa] === wb) return {type:'상생(相生)', desc:`${wa}이 ${wb}를 낳음`, color:'var(--sage)', score:90};
-  if(WUXING_SHENG[wb] === wa) return {type:'피생(被生)', desc:`${wb}이 ${wa}를 기름`, color:'var(--sage)', score:85};
-  if(WUXING_KE[wa] === wb) return {type:'상극(相剋)', desc:`${wa}이 ${wb}를 제어`, color:'var(--crimson)', score:45};
-  if(WUXING_KE[wb] === wa) return {type:'피극(被剋)', desc:`${wb}이 ${wa}를 제어`, color:'var(--crimson)', score:50};
-  return {type:'중립', desc:'간접적 상호작용', color:'var(--muted)', score:65};
+  if(wa === wb) return {type:'비화(比和)', desc:'같은 기운의 공명', color:'var(--gold)', score:70, rawType:'비화'};
+  if(WUXING_SHENG[wa] === wb) return {type:'상생(相生)', desc:`${wa}이 ${wb}를 낳음`, color:'var(--sage)', score:90, rawType:'상생', giver:a, receiver:b};
+  if(WUXING_SHENG[wb] === wa) return {type:'피생(被生)', desc:`${wb}이 ${wa}를 기름`, color:'var(--sage)', score:85, rawType:'상생', giver:b, receiver:a};
+  if(WUXING_KE[wa] === wb) return {type:'상극(相剋)', desc:`${wa}이 ${wb}를 제어`, color:'var(--crimson)', score:45, rawType:'상극', controller:a, controlled:b};
+  if(WUXING_KE[wb] === wa) return {type:'피극(被剋)', desc:`${wb}이 ${wa}를 제어`, color:'var(--crimson)', score:50, rawType:'상극', controller:b, controlled:a};
+  return {type:'중립', desc:'간접적 상호작용', color:'var(--muted)', score:65, rawType:'중립'};
+}
+
+// 오행 관계의 구체적 풀이문 생성
+function wuxingInterpretation(a, b, meName, youName){
+  const rel = wuxingRelation(a, b);
+  const wa = TRIGRAM[a].wuxing;
+  const wb = TRIGRAM[b].wuxing;
+  const ta = TRIGRAM_TRAIT[a];
+  const tb = TRIGRAM_TRAIT[b];
+
+  if(a === b){
+    // 같은 괘 (완전 비화)
+    return {
+      title: `같은 기운의 깊은 공명 — ${a}${TRIGRAM[a].hanja} × ${a}${TRIGRAM[a].hanja}`,
+      synergy: `두 사람 모두 ${ta}을(를) 핵심으로 삼기에, 서로의 결을 즉각적으로 알아봅니다. 설명이 없어도 통하는 편안함, 같은 가치관으로 묶이는 동지애가 관계의 토대가 됩니다.`,
+      caution: `반면 맹점과 약점도 똑같이 공유하기 때문에, 서로의 그림자를 보완해주는 사람이 없어 같은 실수를 반복하거나 시야가 좁아질 수 있습니다. 다른 관점을 가진 제3자의 조언을 주기적으로 들이는 노력이 필요합니다.`,
+      tone: 'neutral'
+    };
+  }
+
+  if(rel.rawType === '비화'){
+    // 오행은 같지만 괘는 다름 (예: 건×태 둘 다 金)
+    return {
+      title: `같은 오행의 자매 기운 — ${wa} × ${wa}`,
+      synergy: `오행이 같기 때문에 근본적인 세계관과 리듬이 유사하여, 처음부터 '같은 언어를 쓰는 사람' 이라는 편안함이 있습니다. ${meName}의 ${ta}${josa(ta,'과/와')} ${youName}의 ${tb}${josa(tb,'은/는')} 같은 뿌리에서 갈라진 가지라, 서로 다른 방식으로 표현되어도 본질적으로는 공명합니다.`,
+      caution: `다만 같은 오행끼리는 서로를 <strong>기르거나 억제해주는 역할</strong>이 없어, 관계의 긴장감이 약하고 정체되기 쉽습니다. 두 사람 모두 비슷한 지점에서 약해지므로, 외부의 이질적 자극을 의식적으로 받아들여야 관계가 성장합니다.`,
+      tone: 'warm'
+    };
+  }
+
+  if(rel.rawType === '상생'){
+    const giver = rel.giver;
+    const receiver = rel.receiver;
+    const tGiver = TRIGRAM_TRAIT[giver];
+    const tReceiver = TRIGRAM_TRAIT[receiver];
+    const wGiver = TRIGRAM[giver].wuxing;
+    const wReceiver = TRIGRAM[receiver].wuxing;
+    const giverName = giver === a ? meName : youName;
+    const receiverName = receiver === a ? meName : youName;
+    return {
+      title: `기르고 길러지는 상생 구도 — ${wGiver} → ${wReceiver}`,
+      synergy: `<strong>${giverName}(${giver})의 ${tGiver}</strong>${josa(tGiver,'이/가')} <strong>${receiverName}(${receiver})의 ${tReceiver}</strong>${josa(tReceiver,'을/를')} 자라게 하는 구조입니다. ${giver}의 기운이 ${receiver}의 기운을 북돋아주기 때문에, ${receiverName}${josa(receiverName,'은/는')} ${giverName} 곁에서 자신의 장점을 더 잘 꽃피울 수 있고, ${giverName}${josa(giverName,'은/는')} 자신의 기운이 의미 있게 쓰이는 보람을 느낍니다.`,
+      caution: `다만 한쪽이 일방적 '주는 역할'에 갇히면 에너지 소진이 올 수 있으므로, ${receiverName}${josa(receiverName,'이/가')} ${giverName}에게 다른 방식의 지지를 돌려주는 균형이 중요합니다. 또한 상생의 편안함에 안주하면 성장의 날이 무뎌질 수 있으니, 의도적 도전을 공유해야 관계가 깊어집니다.`,
+      tone: 'positive'
+    };
+  }
+
+  if(rel.rawType === '상극'){
+    const ctrl = rel.controller;
+    const cted = rel.controlled;
+    const tCtrl = TRIGRAM_TRAIT[ctrl];
+    const tCted = TRIGRAM_TRAIT[cted];
+    const wCtrl = TRIGRAM[ctrl].wuxing;
+    const wCted = TRIGRAM[cted].wuxing;
+    const ctrlName = ctrl === a ? meName : youName;
+    const ctedName = cted === a ? meName : youName;
+    return {
+      title: `서로를 벼리는 상극 구도 — ${wCtrl} 克 ${wCted}`,
+      synergy: `<strong>${ctrlName}(${ctrl})의 ${tCtrl}</strong>${josa(tCtrl,'이/가')} <strong>${ctedName}(${cted})의 ${tCted}</strong>${josa(tCted,'을/를')} 제어하는 구조입니다. 언뜻 갈등처럼 보이지만, <strong>좋은 상극은 서로를 단련시키는 숫돌</strong>과 같아서, ${ctedName}의 과한 에너지를 ${ctrlName}${josa(ctrlName,'이/가')} 다듬어주고, ${ctrlName}의 날카로움은 ${ctedName}의 저항에 부딪혀 부드러워집니다.`,
+      caution: `다만 서로가 방어적이 되면 ${tCtrl}${josa(tCtrl,'이/가')} 억압으로, ${tCted}${josa(tCted,'이/가')} 반항으로 변질되어 관계가 피로해집니다. 상대를 꺾으려 하지 말고, 부딪힘 자체가 성장의 재료임을 받아들이는 자세가 필요합니다. 특히 ${ctedName}${josa(ctedName,'은/는')} ${ctrlName}의 조언을 인신공격으로 받지 않는 훈련이 중요합니다.`,
+      tone: 'tense'
+    };
+  }
+
+  return {
+    title: '간접적 상호작용',
+    synergy: '뚜렷한 상생도 상극도 아닌, 은근한 결이 흐르는 관계입니다.',
+    caution: '특별한 갈등은 없으나 깊은 공명도 드물어, 의도적으로 교집합을 만들어가야 합니다.',
+    tone: 'neutral'
+  };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -598,11 +732,17 @@ function dominantTrigram(pcts){
   return Object.entries(pcts).sort(([,a],[,b]) => b-a)[0][0];
 }
 
-// 에너지 불일치 지수 (유클리디안 거리 기반)
+// 에너지 불일치 지수 (0=완벽일치, 100=극불일치)
+// 퍼센트 분포의 절대차이 총합을 기반으로 계산 (Total Variation Distance 변형)
 function calcDiscordance(pctA, pctB){
   let sum = 0;
-  ORDER.forEach(t => { sum += Math.pow((pctA[t]||0) - (pctB[t]||0), 2); });
-  return Math.min(100, Math.sqrt(sum / ORDER.length));
+  ORDER.forEach(t => {
+    sum += Math.abs((pctA[t]||0) - (pctB[t]||0));
+  });
+  // 최대 이론값: 한 괘 100%, 다른 괘 100% = 200 (두 분포 완전히 다를 때)
+  // 실제로는 보통 30~80 사이 값이 나옴
+  // 0~200 → 0~100 스케일로 변환
+  return Math.min(100, sum / 2);
 }
 
 function gradeDiscordance(score){
@@ -754,6 +894,8 @@ function renderReport(me, you){
   if(!personaData || !innateData){
     const dbExists = typeof window.DB11_Atomic !== 'undefined';
     const keyCount = dbExists ? Object.keys(window.DB11_Atomic).length : 0;
+    const ichingExists = typeof window.ichingDB !== 'undefined';
+    const ichingKeyCount = ichingExists ? Object.keys(window.ichingDB).length : 0;
     const triedKey1 = `${meOuter}_${youOuter}`;
     const triedKey2 = `${meInner}_${youInner}`;
     const sampleKeys = dbExists ? Object.keys(window.DB11_Atomic).slice(0,3).join(', ') : '(없음)';
@@ -762,18 +904,18 @@ function renderReport(me, you){
       <div style="padding:40px;font-family:var(--font-main);line-height:1.8;">
         <h2 style="color:#A63D40;">⚠️ DB 조회 실패 - 진단 정보</h2>
         <div style="background:#fff8f8;padding:20px;border-radius:10px;border-left:4px solid #A63D40;margin:20px 0;">
-          <p><strong>window.DB11_Atomic 존재 여부:</strong> ${dbExists ? '✅ 있음' : '❌ 없음 (db12.js 로드 실패)'}</p>
-          <p><strong>DB 키 개수:</strong> ${keyCount} (예상: 64)</p>
+          <p><strong>db12.js (DB11_Atomic):</strong> ${dbExists ? `✅ 로드됨 (키 ${keyCount}개)` : '❌ 로드 실패'}</p>
+          <p><strong>ichingDB.js:</strong> ${ichingExists ? `✅ 로드됨 (키 ${ichingKeyCount}개)` : '❌ 로드 실패'}</p>
           <p><strong>시도한 키 1 (persona):</strong> "${triedKey1}" → ${personaData ? '✅ 찾음' : '❌ 못 찾음'}</p>
           <p><strong>시도한 키 2 (innate):</strong> "${triedKey2}" → ${innateData ? '✅ 찾음' : '❌ 못 찾음'}</p>
           <p><strong>DB 내 샘플 키:</strong> ${sampleKeys}</p>
         </div>
         <h3>🔧 해결 방법</h3>
         <ol>
-          <li><strong>파일 같은 폴더 확인:</strong> <code>compatibility.html</code>과 <code>db12.js</code>가 <u>반드시 같은 폴더</u>에 있어야 합니다.</li>
-          <li><strong>파일명 확인:</strong> <code>db12.js</code> 정확히 이 이름인가요? (예: <code>db12 (1).js</code> 같은 중복명 아님?)</li>
+          <li><strong>파일 같은 폴더 확인:</strong> <code>compatibility.html</code>, <code>db12.js</code>, <code>ichingDB.js</code>, <code>Omst_Logo_final.svg</code> — 4개 파일이 <u>모두 같은 폴더</u>에 있어야 합니다.</li>
+          <li><strong>파일명 확인:</strong> 정확한 이름인가요? (예: <code>ichingDB (1).js</code> 같은 중복명 아님?)</li>
+          <li><strong>브라우저 강력 새로고침:</strong> Ctrl+Shift+R (Mac: Cmd+Shift+R) 로 캐시 초기화</li>
           <li><strong>브라우저 개발자도구(F12):</strong> Console 탭에서 붉은색 에러 확인 (404 Not Found 등)</li>
-          <li><strong>직접 테스트:</strong> 주소창에 <code>file:///.../db12.js</code> 붙여넣어 파일이 열리는지 확인</li>
         </ol>
       </div>`;
     return;
@@ -826,41 +968,25 @@ function renderReport(me, you){
   root.innerHTML = `
     <!-- HEADER -->
     <div class="brand-header">
+      <div style="margin-bottom:24px;">
+        <img src="Omst_Logo_final.svg" alt="OMST Logo" style="width:85%;max-width:320px;height:auto;display:block;margin:0 auto;">
+      </div>
       <div class="brand-mark">ORIENTAL · MIND · SCAN · TEST</div>
       <h1 class="brand-title">궁합 정밀 리포트</h1>
       <div class="brand-sub">兩人合盤 · 64卦 交會 分析</div>
     </div>
 
-    <!-- 두 사람 -->
-    <div class="dual-card">
-      <div class="person">
-        <div class="person-label">PERSON A</div>
-        <div class="person-name">${meName}</div>
-        <div style="font-family:var(--font-display);font-size:.95rem;color:var(--gold);font-weight:700;margin-bottom:4px;">
-          ${TRIGRAM_PERSONA[meOuter].title}
-        </div>
-        <div style="font-family:var(--font-serif);font-size:.8rem;color:var(--muted);font-style:italic;margin-bottom:14px;word-break:keep-all;line-height:1.5;">
-          "${TRIGRAM_PERSONA[meOuter].brief}"
-        </div>
-        <div class="gua-stack">
-          ${guaBox('상괘', meOuter)}
-          ${guaBox('하괘', meInner, true)}
-        </div>
-      </div>
-      <div class="yin-yang">☯</div>
-      <div class="person">
-        <div class="person-label">PERSON B</div>
-        <div class="person-name">${youName}</div>
-        <div style="font-family:var(--font-display);font-size:.95rem;color:var(--gold);font-weight:700;margin-bottom:4px;">
-          ${TRIGRAM_PERSONA[youOuter].title}
-        </div>
-        <div style="font-family:var(--font-serif);font-size:.8rem;color:var(--muted);font-style:italic;margin-bottom:14px;word-break:keep-all;line-height:1.5;">
-          "${TRIGRAM_PERSONA[youOuter].brief}"
-        </div>
-        <div class="gua-stack">
-          ${guaBox('상괘', youOuter)}
-          ${guaBox('하괘', youInner, true)}
-        </div>
+    <!-- ═══ 나 (차트 → 메인괘 → 잠재괘) ═══ -->
+    ${personSection(meName, meOuter, meInner, meOuterPct, meInnerPct, 'navy', 'radarMe')}
+
+    <!-- ═══ 상대 (차트 → 메인괘 → 잠재괘) ═══ -->
+    ${personSection(youName, youOuter, youInner, youOuterPct, youInnerPct, 'sky', 'radarYou')}
+
+    <!-- 두 사람의 만남 (☯) -->
+    <div style="text-align:center;margin:40px 0 30px 0;">
+      <div style="font-size:3.5rem;color:var(--navy);line-height:1;animation:spin 40s linear infinite;display:inline-block;">☯</div>
+      <div style="font-family:var(--font-display);color:var(--muted);font-size:.95rem;margin-top:8px;letter-spacing:3px;">
+        兩人合盤
       </div>
     </div>
 
@@ -897,6 +1023,22 @@ function renderReport(me, you){
       </div>
     </div>
 
+    <!-- HERO 해설 -->
+    <div style="background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--navy);padding:22px 26px;margin:10px 0 40px 0;border-radius:10px;">
+      <div style="font-family:var(--font-display);font-weight:700;color:var(--navy);font-size:.95rem;margin-bottom:10px;">
+        📖 에너지 불일치 지수란?
+      </div>
+      <div style="font-family:var(--font-serif);font-size:.92rem;color:var(--text);line-height:1.85;word-break:keep-all;">
+        ${meName}과 ${youName}이 가진 <strong>8괘 에너지 분포</strong>가 얼마나 다른지를 0~100 척도로 환산한 값입니다.
+        수치가 낮을수록 두 사람의 기질 분포가 유사하여 익숙한 공명이 흐르고, 높을수록 서로 다른 극을 향해 있어
+        <strong>서로를 채워주는 보완</strong>이 될 수도, 반대로 <strong>잦은 엇갈림의 원인</strong>이 될 수도 있습니다.
+        한 쪽이 절대적으로 좋다고 할 수 없으며, 숫자보다 중요한 것은 아래 섹션들의 <strong>맥락적 해석</strong>입니다.
+        <br><br>
+        <strong style="color:var(--gold);">共鳴(공명점)</strong>은 두 사람 모두 강하게 공유하는 기질이며 관계의 든든한 기반이 되고,
+        <strong style="color:#A63D40;">相衝(충돌점)</strong>은 한쪽은 강하고 다른 쪽은 약한 기질로, 오해와 피로가 가장 자주 발생하는 지점입니다.
+      </div>
+    </div>
+
     <!-- I. 에너지 지형도 -->
     <div class="section">
       <div class="section-head">
@@ -904,6 +1046,15 @@ function renderReport(me, you){
         <h2 class="section-title">두 사람의 에너지 지형도</h2>
       </div>
       <p class="section-sub">여덟 방향의 기질이 어떻게 맞물리고 어긋나는가</p>
+
+      <!-- 섹션 설명 -->
+      <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.85;background:rgba(0,45,98,.03);padding:18px 22px;border-radius:10px;margin-bottom:20px;word-break:keep-all;">
+        아래 팔각형 도표는 두 사람이 가진 <strong>여덟 가지 기질(八卦)</strong>의 강도를 겹쳐 그린 것입니다.
+        도형이 크고 넓을수록 해당 기질이 뚜렷하며, 두 색상이 비슷한 모양일수록 서로 닮았고,
+        한쪽만 튀어나온 지점은 '내가 강한 영역을 상대는 약하게 가진' 구조입니다.
+        <strong style="color:var(--sage);">녹색 공명대</strong>는 두 사람이 함께 확장되는 영역,
+        <strong style="color:var(--crimson);">붉은 충돌대</strong>는 조율이 필요한 영역입니다.
+      </div>
 
       <div class="chart-box">
         <div class="cap">
@@ -938,6 +1089,12 @@ function renderReport(me, you){
           <div class="cap-title">음양 균형</div>
           <div class="cap-sub">陽氣 vs 陰氣 비율 대조 (상괘 기준)</div>
         </div>
+        <div style="font-family:var(--font-serif);font-size:.88rem;color:var(--text);line-height:1.8;margin-bottom:16px;padding:12px 16px;background:rgba(0,45,98,.03);border-radius:8px;word-break:keep-all;">
+          <strong>陽(양)</strong>은 바깥으로 뻗어나가는 능동적 에너지(건·진·감·간)를,
+          <strong>陰(음)</strong>은 안으로 품어 기르는 수용적 에너지(태·리·손·곤)를 뜻합니다.
+          한 사람이 양에 치우치고 상대가 음에 치우치면 <strong>서로를 채워주는 보완</strong>이 되고,
+          같은 극에 치우치면 <strong>공명은 크되 편중의 위험</strong>이 따릅니다.
+        </div>
         ${yyBar(meName, yangMe)}
         ${yyBar(youName, yangYou)}
         ${yinYangVerdict(yangMe, yangYou)}
@@ -952,18 +1109,32 @@ function renderReport(me, you){
       </div>
       <p class="section-sub">두 사람의 괘가 만나 흐르는 원초의 기류</p>
 
+      <!-- 오행 섹션 설명 -->
+      <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.85;background:rgba(184,146,74,.05);padding:18px 22px;border-radius:10px;margin-bottom:20px;word-break:keep-all;">
+        <strong>오행(五行)</strong>은 만물을 이루는 다섯 가지 근원적 기운 — 木(나무)·火(불)·土(흙)·金(쇠)·水(물) — 을 말합니다.
+        팔괘는 각각 하나의 오행에 속하며, 두 괘가 만날 때 오행은 네 가지 관계 중 하나로 작동합니다:
+        <strong style="color:var(--sage);">상생(서로를 길러줌)</strong>,
+        <strong style="color:var(--gold);">비화(같은 기운의 공명)</strong>,
+        <strong style="color:var(--crimson);">상극(서로를 제어)</strong>, 간접(중립).
+        어떤 관계든 <strong>그 자체로 좋거나 나쁜 것은 없으며</strong>, 두 사람이 그 에너지를 어떻게 다루느냐가 궁합의 성패를 가릅니다.
+      </div>
+
+      <!-- 상괘 오행 분석 -->
       <div class="wuxing-box">
-        ${wuxingSVG(meOuter, youOuter, '상괘(社會)')}
+        ${wuxingSVG(meOuter, youOuter, '상괘(社會) 관계')}
         <div class="wuxing-note">
           사회적 얼굴에서 <strong>${meOuter}(${TRIGRAM[meOuter].wuxing})</strong>과 <strong>${youOuter}(${TRIGRAM[youOuter].wuxing})</strong>은 <strong style="color:${wuOuter.color}">${wuOuter.type}</strong> 관계 — ${wuOuter.desc}.
         </div>
+        ${wuxingInterpretationBox(wuxingInterpretation(meOuter, youOuter, meName, youName))}
       </div>
 
+      <!-- 하괘 오행 분석 -->
       <div class="wuxing-box">
-        ${wuxingSVG(meInner, youInner, '하괘(本質)')}
+        ${wuxingSVG(meInner, youInner, '하괘(本質) 관계')}
         <div class="wuxing-note">
           내면의 본질에서 <strong>${meInner}(${TRIGRAM[meInner].wuxing})</strong>과 <strong>${youInner}(${TRIGRAM[youInner].wuxing})</strong>은 <strong style="color:${wuInner.color}">${wuInner.type}</strong> 관계 — ${wuInner.desc}.
         </div>
+        ${wuxingInterpretationBox(wuxingInterpretation(meInner, youInner, meName, youName))}
       </div>
     </div>
 
@@ -1024,6 +1195,17 @@ function renderReport(me, you){
       </div>
       <p class="section-sub">주역 정통 효변법(爻變法)에 따른 관계의 흐름</p>
 
+      <!-- 효변법 설명 -->
+      <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.85;background:rgba(0,45,98,.04);padding:18px 22px;border-radius:10px;margin-bottom:20px;word-break:keep-all;">
+        주역에서 괘(卦)는 여섯 개의 효(爻)로 이루어집니다. 관계도 마찬가지로 여섯 층위의 흐름으로 해석할 수 있는데,
+        이 중 <strong>가장 변화 압력이 큰 효</strong>를 <strong>동효(動爻)</strong>라 부르며, 그 효가 음양을 뒤집으면 새로운 괘인
+        <strong>변괘(變卦, 之卦)</strong>가 됩니다. 이것이 주역 정통의 <strong>효변법(爻變法)</strong>입니다.
+        <br><br>
+        궁합에서 <strong>본괘(本卦)</strong>는 지금 두 사람이 놓인 관계의 형상이고,
+        <strong>변괘(之卦)</strong>는 지금의 에너지가 그대로 흘렀을 때 관계가 향해가는 다음 풍경입니다.
+        그리고 <strong>호괘(互卦)</strong>는 본괘 안에 숨어 있는 잠재 흐름 — 겉으로 드러나지 않는 내면의 기류 — 를 보여줍니다.
+      </div>
+
       ${hexagramSVGBox(benGua, '本卦 · 관계의 현재', relationOuter, relationInner, movingIdx)}
 
       ${movingIdx !== null ? `
@@ -1041,8 +1223,23 @@ function renderReport(me, you){
 
         <div class="transform-box">
           <div style="font-family:var(--font-serif);font-size:1rem;line-height:1.9;color:var(--text);word-break:keep-all;">
-            관계는 <strong>${lookupHex64(relationOuter, relationInner).name}(${lookupHex64(relationOuter, relationInner).kor})</strong>에서 <strong>${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).name}(${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).kor})</strong>의 상태로 전이되고 있습니다.<br><br>
-            ${innateData.criteria.transformation}
+            관계는 <strong>${lookupHex64(relationOuter, relationInner).name}(${lookupHex64(relationOuter, relationInner).kor})</strong>에서 <strong>${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).name}(${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).kor})</strong>의 상태로 전이되고 있습니다.
+          </div>
+        </div>
+
+        <!-- 변괘의 의미 해석 -->
+        <div style="background:linear-gradient(135deg, rgba(184,146,74,.08) 0%, rgba(212,177,112,.05) 100%);border:1px solid rgba(184,146,74,.25);border-radius:14px;padding:26px;margin:20px 0;">
+          <div style="font-family:var(--font-display);font-weight:700;color:var(--gold);font-size:1rem;margin-bottom:14px;letter-spacing:2px;">
+            📜 변괘가 말해주는 것
+          </div>
+          <div style="font-family:var(--font-serif);font-size:.94rem;color:var(--text);line-height:1.9;word-break:keep-all;">
+            <strong>${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).nature} ${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).name}(${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).kor})</strong>은
+            <strong>${lookupHex64(zhiTrigrams.outer, zhiTrigrams.inner).meaning}</strong>의 뜻을 품은 괘입니다.
+            지금의 <strong>${lookupHex64(relationOuter, relationInner).name}</strong> 상태에서 변화의 압력이 작동한다면,
+            관계는 이 방향으로 흐르게 된다는 예언입니다.
+            <br><br>
+            이것이 반드시 '더 좋아진다/나빠진다'를 뜻하지는 않습니다. 주역은 <strong>상황의 성격이 어떻게 바뀌는가</strong>를 알려줄 뿐,
+            그 결을 살릴지 거스를지는 두 사람의 선택입니다. 아래 내면 섹션의 통찰을 참고하여, 이 흐름을 받아들일지 의식적으로 다른 길을 낼지 함께 나누어 보세요.
           </div>
         </div>
       ` : `
@@ -1054,8 +1251,11 @@ function renderReport(me, you){
       `}
 
       ${hexagramSVGBox(huGua, '互卦 · 관계의 속마음', huTrigrams.outer, huTrigrams.inner)}
-      <div style="background:rgba(184,146,74,.06);padding:20px 22px;border-radius:12px;margin:10px 0 20px 0;font-family:var(--font-serif);line-height:1.9;color:var(--text);">
-        호괘는 두 사람의 본괘 안에서 2·3·4·5효가 만들어내는 <strong>내적 잠재성</strong>을 드러냅니다. 겉으로 드러나지 않은 <strong>${huTrigrams.outer}×${huTrigrams.inner}</strong>의 기운이 관계의 밑바닥에서 조용히 작동하고 있습니다.
+      <div style="background:rgba(184,146,74,.06);padding:20px 22px;border-radius:12px;margin:10px 0 20px 0;font-family:var(--font-serif);line-height:1.9;color:var(--text);word-break:keep-all;">
+        호괘는 본괘의 2·3·4·5효가 만들어내는 <strong>내적 잠재성</strong>을 보여줍니다.
+        겉으로는 <strong>${lookupHex64(relationOuter, relationInner).name}</strong>의 얼굴을 하고 있지만,
+        그 속에서는 <strong>${lookupHex64(huTrigrams.outer, huTrigrams.inner).name}(${lookupHex64(huTrigrams.outer, huTrigrams.inner).kor}) — ${lookupHex64(huTrigrams.outer, huTrigrams.inner).meaning}</strong>의
+        기운이 조용히 작동하고 있습니다. 두 사람이 의식하지 못하는 이 밑흐름을 이해하면, 관계의 겉모습만으로는 설명되지 않는 어떤 감정의 결을 납득할 수 있습니다.
       </div>
 
       <div class="criterion inner" style="margin-top:20px;">
@@ -1087,11 +1287,11 @@ function renderReport(me, you){
         </div>
         <div class="rx-block dont">
           <div class="rx-lbl">⚠ TABOO · 외적 금기</div>
-          <div class="rx-body">${personaData.taboo || '(DB에 taboo 필드가 없습니다)'}</div>
+          <div class="rx-body">${personaData.taboo || '⚠ <strong>taboo 필드가 DB에 없습니다.</strong> 사용 중인 db12.js가 최신 버전(약 232KB)인지 확인해주세요.'}</div>
         </div>
         <div class="rx-block dont">
           <div class="rx-lbl">⚠ TABOO · 내적 금기</div>
-          <div class="rx-body">${innateData.taboo || '(DB에 taboo 필드가 없습니다)'}</div>
+          <div class="rx-body">${innateData.taboo || '⚠ <strong>taboo 필드가 DB에 없습니다.</strong> 사용 중인 db12.js가 최신 버전(약 232KB)인지 확인해주세요.'}</div>
         </div>
 
         <!-- 낙관 도장 -->
@@ -1119,6 +1319,8 @@ function renderReport(me, you){
   `;
 
   // 차트 렌더
+  renderSoloRadar('radarMe', meOuterPct, meInnerPct, 'navy');
+  renderSoloRadar('radarYou', youOuterPct, youInnerPct, 'sky');
   renderRadar('radarOuter', meOuterPct, youOuterPct, meName, youName, '#002D62');
   renderRadar('radarInner', meInnerPct, youInnerPct, meName, youName, '#4A90E2');
 }
@@ -1126,6 +1328,84 @@ function renderReport(me, you){
 // ═══════════════════════════════════════════════════════════
 // 5. 부품 함수들
 // ═══════════════════════════════════════════════════════════
+// 박스 우측에 배경 패턴처럼 들어갈 6효 괘 그림
+function hexagramPatternSVG(outer, inner, lineColor='rgba(255,255,255,.18)'){
+  const outerBits = TRIGRAM[outer].binary.split('').map(Number);
+  const innerBits = TRIGRAM[inner].binary.split('').map(Number);
+  const bits = [...outerBits, ...innerBits];
+
+  const lineWidth = 100;
+  const yaoHeight = 13;
+  const gap = 7;
+  const cx = 60;
+  const totalH = (yaoHeight + gap) * 6;
+
+  let yaos = '';
+  for(let i=0; i<6; i++){
+    const y = i * (yaoHeight + gap);
+    const isYang = bits[i] === 1;
+    if(isYang){
+      yaos += `<rect x="${cx - lineWidth/2}" y="${y}" width="${lineWidth}" height="${yaoHeight}" fill="${lineColor}" rx="1.5"/>`;
+    } else {
+      const seg = (lineWidth - 14) / 2;
+      yaos += `<rect x="${cx - lineWidth/2}" y="${y}" width="${seg}" height="${yaoHeight}" fill="${lineColor}" rx="1.5"/>`;
+      yaos += `<rect x="${cx + 7}" y="${y}" width="${seg}" height="${yaoHeight}" fill="${lineColor}" rx="1.5"/>`;
+    }
+  }
+  return `
+    <svg viewBox="0 0 120 ${totalH}" style="display:block;height:100%;width:auto;" xmlns="http://www.w3.org/2000/svg">
+      ${yaos}
+    </svg>`;
+}
+
+// 하이라이트 박스 — 사진 참고 스타일
+// 테마 color: 'navy'(나) 또는 'sky'(상대)
+function mainCharacterCard(name, outer, inner, theme='navy'){
+  const persona = TRIGRAM_PERSONA[outer];
+  const hex64 = lookupHex64(outer, inner);
+
+  // 64괘 번호/상세는 ver1 ichingDB에서 가져옴
+  // 재인덱싱된 ichingDB는 [상괘+하괘] binary 순서로 저장됨
+  const binary = TRIGRAM[outer].binary + TRIGRAM[inner].binary;
+  const iching = (window.ichingDB || {})[binary] || null;
+  const fullName = iching?.name || `${hex64.nature} ${hex64.name}(${hex64.kor})`;  // 예: "10. 천택리(天澤履)"
+  const summary = iching?.summary || persona.summary;
+
+  // 테마별 색상
+  const colors = theme === 'sky'
+    ? { bg:'#8B2E3E', accent:'#FFD9B8', pattern:'rgba(255,255,255,.2)' }
+    : { bg:'#002D62', accent:'#FFD700', pattern:'rgba(255,255,255,.18)' };
+
+  return `
+    <div class="highlight-box" style="padding:34px 30px;margin-bottom:18px;background:${colors.bg};border-radius:20px;color:#fff;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,45,98,.2);min-height:180px;">
+
+      <!-- 우측 배경 6효 괘 패턴 -->
+      <div style="position:absolute;top:0;right:-10px;bottom:0;display:flex;align-items:center;pointer-events:none;opacity:.45;">
+        <div style="height:78%;">
+          ${hexagramPatternSVG(outer, inner, colors.pattern)}
+        </div>
+      </div>
+
+      <!-- 본문 (가운데 정렬) -->
+      <div style="position:relative;text-align:center;">
+        <!-- 닉네임 (라벨 자리에) -->
+        <div style="color:${colors.accent};font-size:1rem;letter-spacing:5px;font-weight:bold;margin-bottom:14px;">
+          ${name.toUpperCase()}
+        </div>
+
+        <!-- 괘명 (번호 + 한글 + 한자) -->
+        <h2 style="margin:0 0 16px 0;font-size:1.7rem;color:#fff;font-family:var(--font-display);font-weight:700;line-height:1.2;word-break:keep-all;">
+          ${fullName}
+        </h2>
+
+        <!-- 한 줄 캐릭터 설명 (따옴표) -->
+        <p style="line-height:1.65;font-size:1.02rem;margin:0;word-break:keep-all;font-weight:300;font-family:var(--font-serif);color:#fff;opacity:.95;">
+          "${summary}"
+        </p>
+      </div>
+    </div>`;
+}
+
 function guaBox(lbl, name, isInner=false){
   const t = TRIGRAM[name];
   return `
@@ -1133,6 +1413,107 @@ function guaBox(lbl, name, isInner=false){
       <span class="lbl">${lbl}</span>
       <span class="sym">${t.symbol}</span>
       <span class="name">${name} ${t.hanja}</span>
+    </div>`;
+}
+
+// 한 사람의 전체 섹션: [단독 레이더 차트] → [메인 캐릭터 박스] → [잠재괘 카드]
+function personSection(name, outer, inner, outerPcts, innerPcts, theme, canvasId){
+  const accentColor = theme === 'sky' ? '#8B2E3E' : '#002D62';
+  const innerLabelColor = theme === 'sky' ? '#B8A3D4' : '#6B4C9A';
+
+  return `
+    <div style="margin-bottom:40px;">
+      <!-- 섹션 헤더 -->
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-family:var(--font-display);font-size:.85rem;letter-spacing:8px;color:${accentColor};font-weight:700;margin-bottom:6px;">
+          ${theme === 'sky' ? '相手' : '我'}
+        </div>
+        <div style="font-family:var(--font-display);font-size:1.15rem;color:var(--ink);font-weight:700;">
+          ${name}님의 팔괘 에너지
+        </div>
+      </div>
+
+      <!-- 단독 레이더 차트 -->
+      <div class="chart-box" style="margin-bottom:20px;">
+        <div class="chart-wrap" style="height:340px;"><canvas id="${canvasId}"></canvas></div>
+        <div style="text-align:center;font-size:.78rem;color:var(--muted);margin-top:6px;font-family:var(--font-serif);line-height:1.6;word-break:keep-all;">
+          <strong style="color:${accentColor};">상괘(Persona)</strong>는 사회적으로 드러나는 기질,
+          <strong style="color:${innerLabelColor};">하괘(Essence)</strong>는 내면의 본질입니다.
+          <br>가장 큰 도형을 그린 방향이 ${name}님의 지배 기질이며, 그 결과가 아래 메인괘로 나타납니다.
+        </div>
+      </div>
+
+      <!-- 메인 캐릭터 박스 -->
+      ${mainCharacterCard(name, outer, inner, theme)}
+
+      <!-- 잠재괘 카드 (경합 있을 때만) -->
+      ${potentialHexCards(outerPcts, innerPcts, theme)}
+    </div>`;
+}
+
+// ─── 잠재괘 카드 섹션 (ver1 스타일) ───
+// 상괘/하괘의 1등과 2등 차이가 5% 미만이면 잠재적 조합 괘를 보여줌
+// 조합:
+//   - 내면의 변수: [fO + secondI]  (하괘가 박빙일 때)
+//   - 외부적 환경: [secondO + fI]  (상괘가 박빙일 때)
+//   - 잠재적 역동: [secondO + secondI]  (둘 다 박빙일 때)
+function potentialHexCards(outerPcts, innerPcts, theme='navy'){
+  // 1,2위 찾기
+  const sortedO = Object.entries(outerPcts).sort((a,b) => b[1] - a[1]);
+  const sortedI = Object.entries(innerPcts).sort((a,b) => b[1] - a[1]);
+  const fO = sortedO[0][0], secondO = sortedO[1][0];
+  const fI = sortedI[0][0], secondI = sortedI[1][0];
+  const gapO = sortedO[0][1] - sortedO[1][1];
+  const gapI = sortedI[0][1] - sortedI[1][1];
+
+  const THRESHOLD = 5.0;
+  const isOComplex = gapO < THRESHOLD;
+  const isIComplex = gapI < THRESHOLD;
+
+  // 경합이 없으면 카드 없음
+  if(!isOComplex && !isIComplex) return '';
+
+  // 현재 메인괘 binary (제외하기 위함)
+  const mainBinary = TRIGRAM[fO].binary + TRIGRAM[fI].binary;
+
+  const hexes = [];
+  const addHex = (top, bottom, label) => {
+    const binary = TRIGRAM[top].binary + TRIGRAM[bottom].binary;
+    if(binary === mainBinary) return;  // 메인과 같으면 스킵
+    const iching = (window.ichingDB || {})[binary];
+    if(!iching) return;
+    hexes.push({
+      symbol: iching.symbol,
+      name: iching.name,
+      label: label,
+    });
+  };
+
+  if(isIComplex) addHex(fO, secondI, '내면의 변수');
+  if(isOComplex) addHex(secondO, fI, '외부적 환경');
+  if(isOComplex && isIComplex) addHex(secondO, secondI, '잠재적 역동');
+
+  if(hexes.length === 0) return '';
+
+  // 테마별 색상 (메인 박스와 맞춤)
+  const colors = theme === 'sky'
+    ? { accent: '#8B2E3E', border: 'rgba(139,46,62,.15)' }
+    : { accent: '#002D62', border: 'rgba(0,45,98,.1)' };
+
+  return `
+    <div style="margin:-8px 0 22px 0;">
+      <p style="text-align:center;font-size:.78rem;color:#999;margin-bottom:12px;letter-spacing:2px;font-family:var(--font-serif);">
+        ── 상황에 따라 발현되는 잠재적 기질 ──
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(${hexes.length},1fr);gap:10px;">
+        ${hexes.map(hex => `
+          <div style="background:#fff;border:1px solid ${colors.border};padding:16px 8px;border-radius:14px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.02);">
+            <div style="font-size:1.7rem;color:${colors.accent};margin-bottom:5px;line-height:1;font-family:serif;">${hex.symbol}</div>
+            <div style="font-size:.85rem;font-weight:bold;color:#444;font-family:var(--font-display);">${hex.name.split('(')[0].trim()}</div>
+            <div style="font-size:.66rem;color:#aaa;margin-top:4px;white-space:nowrap;letter-spacing:.5px;">${hex.label}</div>
+          </div>
+        `).join('')}
+      </div>
     </div>`;
 }
 
@@ -1206,6 +1587,37 @@ function yinYangVerdict(yangA, yangB){
       </div>
       <div style="font-family:var(--font-serif);font-size:.85rem;color:var(--text);line-height:1.6;">
         ${desc}
+      </div>
+    </div>`;
+}
+
+// 오행 해설 박스 렌더
+function wuxingInterpretationBox(interp){
+  const toneColor = {
+    'positive': 'var(--sage)',
+    'warm':     'var(--gold)',
+    'tense':    'var(--crimson)',
+    'neutral':  'var(--muted)',
+  }[interp.tone] || 'var(--muted)';
+  const bgColor = {
+    'positive': 'rgba(107,142,90,.05)',
+    'warm':     'rgba(184,146,74,.05)',
+    'tense':    'rgba(166,61,64,.05)',
+    'neutral':  'rgba(0,0,0,.02)',
+  }[interp.tone] || 'rgba(0,0,0,.02)';
+
+  return `
+    <div style="margin-top:18px;padding:22px 24px;background:${bgColor};border-radius:12px;border-left:4px solid ${toneColor};text-align:left;">
+      <div style="font-family:var(--font-display);font-weight:700;color:${toneColor};font-size:1.02rem;margin-bottom:14px;line-height:1.5;">
+        ${interp.title}
+      </div>
+      <div style="font-family:var(--font-serif);font-size:.92rem;color:var(--text);line-height:1.85;word-break:keep-all;margin-bottom:14px;">
+        <strong style="color:${toneColor};">✨ 시너지:</strong><br>
+        ${interp.synergy}
+      </div>
+      <div style="font-family:var(--font-serif);font-size:.92rem;color:var(--text);line-height:1.85;word-break:keep-all;">
+        <strong style="color:var(--crimson);">⚠ 유의점:</strong><br>
+        ${interp.caution}
       </div>
     </div>`;
 }
@@ -1361,7 +1773,7 @@ function renderRadar(canvasId, mePcts, youPcts, meName, youName, accentColor){
       labels,
       datasets:[
         {label:meName, data:meDataScaled, borderColor:accentColor, backgroundColor:hexToRgba(accentColor, 0.12), borderWidth:2.5, pointRadius:3, pointBackgroundColor:accentColor},
-        {label:youName, data:youDataScaled, borderColor:'#B8924A', backgroundColor:'rgba(184,146,74,.12)', borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#B8924A'}
+        {label:youName, data:youDataScaled, borderColor:'#8B2E3E', backgroundColor:'rgba(139,46,62,.12)', borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#8B2E3E'}
       ]
     },
     options:{
@@ -1393,6 +1805,92 @@ function hexToRgba(hex, alpha){
   const g = parseInt(hex.slice(3,5), 16);
   const b = parseInt(hex.slice(5,7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// 한 사람의 상괘(persona) + 하괘(essence) 겹친 레이더 (ver1 스타일)
+function renderSoloRadar(canvasId, outerPcts, innerPcts, theme='navy'){
+  const ctx = document.getElementById(canvasId);
+  if(!ctx) return;
+  if(window['_chart_' + canvasId]) window['_chart_' + canvasId].destroy();
+
+  const labels = ORDER.map(t => TRIGRAM[t].hanja);
+  const outerData = ORDER.map(t => outerPcts[t]);
+  const innerData = ORDER.map(t => innerPcts[t]);
+
+  // ver1 방식 정규화: 편차에 따라 상한선 조정
+  const normalize = (data) => {
+    const values = [...data];
+    const maxVal = Math.max(...values);
+    const minVal = Math.min(...values);
+    if(maxVal === 0) return values;
+    const deviation = maxVal - minVal;
+    let limit;
+    if(deviation < 5) limit = 70;
+    else if(deviation < 15) limit = 85;
+    else limit = 95;
+    return values.map(v => (v / maxVal) * limit);
+  };
+
+  const outerScaled = normalize(outerData);
+  const innerScaled = normalize(innerData);
+
+  // 테마별 색상
+  // 나: 상괘=네이비 테두리, 하괘=보라 테두리 (채움은 반투명)
+  // 상대: 상괘=버건디 테두리, 하괘=연보라 테두리
+  const colors = theme === 'sky'
+    ? { outerLine: '#8B2E3E', innerLine: '#B8A3D4', outerFill: 'rgba(139,46,62,.14)', innerFill: 'rgba(184,163,212,.22)' }
+    : { outerLine: '#002D62', innerLine: '#6B4C9A', outerFill: 'rgba(0,45,98,.14)', innerFill: 'rgba(107,76,154,.18)' };
+
+  window['_chart_' + canvasId] = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Persona (상괘)',
+          data: outerScaled,
+          borderColor: colors.outerLine,
+          backgroundColor: colors.outerFill,
+          borderWidth: 2.8,
+          pointRadius: 2.5,
+          pointBackgroundColor: colors.outerLine,
+        },
+        {
+          label: 'Essence (하괘)',
+          data: innerScaled,
+          borderColor: colors.innerLine,
+          backgroundColor: colors.innerFill,
+          borderWidth: 2.8,
+          pointRadius: 2.5,
+          pointBackgroundColor: colors.innerLine,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 10, bottom: 10 } },
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 12, family: 'Pretendard' }, padding: 12 } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const orig = ctx.datasetIndex === 0 ? outerData[ctx.dataIndex] : innerData[ctx.dataIndex];
+              return `${ctx.dataset.label}: ${orig.toFixed(1)}%`;
+            }
+          }
+        }
+      },
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { display: false, stepSize: 25 },
+          grid: { color: 'rgba(0,0,0,.06)' },
+          angleLines: { color: 'rgba(0,0,0,.1)' },
+          pointLabels: { font: { size: 16, weight: 'bold', family: 'serif' }, color: '#333', padding: 8 }
+        }
+      }
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
