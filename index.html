@@ -1927,7 +1927,7 @@ function renderReport(me, you){
         <span class="section-num">III.</span>
         <h2 class="section-title">사회적 페르소나</h2>
       </div>
-      <p class="section-sub">세상에 비치는 두 사람의 모습 · 상괘 ${meOuter}×${youOuter} 교회</p>
+      <p class="section-sub">세상에 비치는 두 사람의 모습 · 상괘 ${guaLabel(meOuter)} × ${guaLabel(youOuter)}의 만남</p>
 
       <!-- 상호 시선 패널 (상괘) -->
       ${perspectivePanel(meName, meOuter, youName, youOuter, 'outer')}
@@ -1954,7 +1954,7 @@ function renderReport(me, you){
         <span class="section-num">IV.</span>
         <h2 class="section-title">심층 정서와 본능</h2>
       </div>
-      <p class="section-sub">둘만 있을 때 흐르는 무의식의 기류 · 하괘 ${meInner}×${youInner} 교회</p>
+      <p class="section-sub">둘만 있을 때 흐르는 무의식의 기류 · 하괘 ${guaLabel(meInner)} × ${guaLabel(youInner)}의 만남</p>
 
       <!-- 상호 심증 패널 (하괘) -->
       ${perspectivePanel(meName, meInner, youName, youInner, 'inner')}
@@ -3382,13 +3382,39 @@ function buildWheelCandidates(outerPcts, innerPcts){
 // myCandidates: [{binary, label, symbol, name}] - 본괘 + 경합에서 나온 잠재괘들
 function compatibilityWheelBox(myOuter, myInner, partnerOuter, partnerInner, myName, partnerName, theme, wheelId, myCandidates = []){
   const db = window.ichingDB;
-  if(!db) return '<div>ichingDB 로드 필요</div>';
+  if(!db || Object.keys(db).length === 0){
+    // 로드 실패 시 상세 진단
+    const diag = {
+      windowIching: typeof window.ichingDB,
+      keyCount: (window.ichingDB && Object.keys(window.ichingDB).length) || 0,
+      hasTrigram: typeof TRIGRAM !== 'undefined',
+    };
+    return `
+      <div style="padding:20px;background:#fff8f8;border:1px solid #f88;border-radius:8px;font-family:var(--font-serif);font-size:.85rem;color:#333;text-align:left;">
+        <div style="color:#c44;font-weight:700;margin-bottom:8px;">⚠ ichingDB 로드 실패</div>
+        <div style="font-family:monospace;font-size:.75rem;background:#fff;padding:8px;border-radius:4px;">
+          → window.ichingDB 타입: <strong>${diag.windowIching}</strong><br>
+          → 키 개수: <strong>${diag.keyCount}</strong><br>
+          → TRIGRAM 있음: <strong>${diag.hasTrigram}</strong>
+        </div>
+        <div style="margin-top:10px;font-size:.8rem;color:#666;">
+          <strong>점검 사항:</strong><br>
+          1. <code>ichingDB.js</code> 파일이 같은 폴더에 있나요? (대소문자 정확히)<br>
+          2. F12 → Network 탭에서 <code>ichingDB.js</code>가 200 OK인지 확인<br>
+          3. F12 → Console 탭에 404 같은 에러가 있는지 확인
+        </div>
+      </div>`;
+  }
 
   const myBinary = TRIGRAM[myOuter].binary + TRIGRAM[myInner].binary;
   const partnerBinary = TRIGRAM[partnerOuter].binary + TRIGRAM[partnerInner].binary;
   const myData = db[myBinary];
   const partnerData = db[partnerBinary];
-  if(!myData || !partnerData) return '<div>DB 조회 실패</div>';
+  if(!myData || !partnerData){
+    return `<div style="padding:20px;background:#fff8f8;border:1px solid #f88;border-radius:8px;color:#c44;">
+      ⚠ DB 조회 실패: myBinary=${myBinary}, partnerBinary=${partnerBinary}
+    </div>`;
+  }
 
   // myCandidates가 비어있으면 본괘만
   const candidates = myCandidates.length > 0 ? myCandidates : [{
