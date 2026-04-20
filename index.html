@@ -2071,11 +2071,30 @@ function renderReport(me, you){
         <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.9;word-break:keep-all;">
           <div style="margin-bottom:14px;padding:12px 14px;background:rgba(166,61,64,.04);border-left:3px solid var(--crimson);border-radius:6px;">
             <strong style="color:var(--crimson);font-family:var(--font-display);">사회적 관계에서</strong><br>
-            ${personaData.taboo || '(세부 해석 데이터 준비 중)'}
+            ${personaData.taboo && personaData.taboo.trim() ? personaData.taboo : `
+              <div style="color:#c44;font-size:.85rem;padding:8px 0;">
+                ⚠ <strong>${meOuter}_${youOuter}</strong> 조합의 taboo 로드 실패<br>
+                <div style="background:#fff8f8;padding:8px;margin-top:6px;border-radius:4px;font-family:monospace;font-size:.75rem;color:#333;">
+                  → DB11_Atomic 전체 키 개수: <strong>${(window.DB11_Atomic && Object.keys(window.DB11_Atomic).length) || 0}</strong>개<br>
+                  → ${meOuter}_${youOuter} 키 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter])}</strong><br>
+                  → persona 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter]?.persona)}</strong><br>
+                  → persona.taboo 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter]?.persona?.taboo)}</strong><br>
+                  → persona.taboo 길이: <strong>${(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter]?.persona?.taboo?.length) || 0}</strong>
+                </div>
+              </div>`}
           </div>
           <div style="padding:12px 14px;background:rgba(166,61,64,.04);border-left:3px solid var(--crimson);border-radius:6px;">
             <strong style="color:var(--crimson);font-family:var(--font-display);">친밀한 관계에서</strong><br>
-            ${innateData.taboo || '(세부 해석 데이터 준비 중)'}
+            ${innateData.taboo && innateData.taboo.trim() ? innateData.taboo : `
+              <div style="color:#c44;font-size:.85rem;padding:8px 0;">
+                ⚠ <strong>${meInner}_${youInner}</strong> 조합의 taboo 로드 실패<br>
+                <div style="background:#fff8f8;padding:8px;margin-top:6px;border-radius:4px;font-family:monospace;font-size:.75rem;color:#333;">
+                  → ${meInner}_${youInner} 키 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner])}</strong><br>
+                  → innate 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner]?.innate)}</strong><br>
+                  → innate.taboo 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner]?.innate?.taboo)}</strong><br>
+                  → innate.taboo 길이: <strong>${(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner]?.innate?.taboo?.length) || 0}</strong>
+                </div>
+              </div>`}
           </div>
         </div>
       </div>
@@ -2165,7 +2184,7 @@ function mainCharacterCard(name, outer, inner, theme='navy'){
     : { bg:'#002D62', accent:'#FFD700', pattern:'rgba(255,255,255,.18)' };
 
   return `
-    <div class="highlight-box" style="padding:34px 30px;margin-bottom:18px;background:${colors.bg};border-radius:20px;color:#fff;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,45,98,.2);min-height:180px;">
+    <div class="highlight-box" style="padding:28px 30px;margin-bottom:18px;background:${colors.bg};border-radius:20px;color:#fff;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,45,98,.2);min-height:170px;display:flex;align-items:center;justify-content:center;">
 
       <!-- 우측 배경 6효 괘 패턴 -->
       <div style="position:absolute;top:0;right:-10px;bottom:0;display:flex;align-items:center;pointer-events:none;opacity:.45;">
@@ -2175,19 +2194,14 @@ function mainCharacterCard(name, outer, inner, theme='navy'){
       </div>
 
       <!-- 본문 (가운데 정렬) -->
-      <div style="position:relative;text-align:center;">
-        <!-- 닉네임 (라벨 자리에) -->
-        <div style="color:${colors.accent};font-size:1.6rem;letter-spacing:6px;font-weight:bold;margin-bottom:16px;">
-          ${name.toUpperCase()}
-        </div>
-
+      <div style="position:relative;text-align:center;width:100%;">
         <!-- 괘명 (번호 + 한글 + 한자) -->
-        <h2 style="margin:0 0 16px 0;font-size:1.7rem;color:#fff;font-family:var(--font-display);font-weight:700;line-height:1.2;word-break:keep-all;">
+        <h2 style="margin:0 0 14px 0;font-size:1.9rem;color:#fff;font-family:var(--font-display);font-weight:700;line-height:1.2;word-break:keep-all;">
           ${fullName}
         </h2>
 
         <!-- 한 줄 캐릭터 설명 (따옴표) -->
-        <p style="line-height:1.65;font-size:1.02rem;margin:0;word-break:keep-all;font-weight:300;font-family:var(--font-serif);color:#fff;opacity:.95;">
+        <p style="line-height:1.7;font-size:1.08rem;margin:0;word-break:keep-all;font-weight:300;font-family:var(--font-serif);color:#fff;opacity:.95;">
           "${summary}"
         </p>
       </div>
