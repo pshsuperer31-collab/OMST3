@@ -13,8 +13,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;700&display=swap" rel="stylesheet">
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="ichingDB.js"></script>
-<script src="db12.js"></script>
+<script src="ichingDB.js?v=20260420a"></script>
+<script src="db12.js?v=20260420a"></script>
 <style>
 :root{
   --navy:#002D62;
@@ -508,6 +508,7 @@ body{
   .basic-profile-grid{grid-template-columns:1fr !important;}
   .wuxing-pentagon-grid{grid-template-columns:1fr !important;}
   .wheel-grid{grid-template-columns:1fr !important;}
+  .guide-grid-2{grid-template-columns:1fr !important;}
 }
 </style>
 </head>
@@ -572,6 +573,30 @@ function guaLabelHTML(t, style=''){
   if(!g) return t;
   const baseStyle = 'font-family:serif;font-size:1.1em;margin-right:2px;vertical-align:middle;';
   return `<span style="${baseStyle}${style}">${g.symbol}</span><span style="font-family:serif;vertical-align:middle;">${g.hanja}</span>`;
+}
+
+// taboo/advice 같은 DB 텍스트에 쓰인 한글 괘명(건/곤/진/손/감/리/간/태)을
+// 문맥에서 괘 지칭으로 쓰였을 때만 "☰ 乾" 형태로 치환
+// 주의: '태도', '간을'(장기) 같은 일반 명사는 치환 안 되도록 조사 조합 한정
+// 한글에서 \b가 제대로 동작 안 하므로 (시작|공백|구두점) 뒤로 명시
+function convertTrigramRefsInText(text){
+  if(!text) return text;
+  // 괘 지칭 패턴: 앞에 공백/문장시작/구두점이 오고, 뒤에 특정 조사/어구
+  const patterns = [
+    /(^|[\s,.!?'"(])([건곤진손감리간태])(에게는|에게)/g,
+    /(^|[\s,.!?'"(])([건곤진손감리간태])(\s+또한|\s+역시|\s+또)(?=[\s가-힣])/g,
+    /(^|[\s,.!?'"(])([건곤진손감리간태])(의\s+내면|의\s+무의식|의\s+본능|의\s+마음|의\s+입장|의\s+자리|의\s+깊이)/g,
+    /(^|[\s,.!?'"(])([건곤진손감리간태])(이\s+자신의|가\s+자신의)/g,
+  ];
+  let result = text;
+  patterns.forEach(p => {
+    result = result.replace(p, (match, pre, gua, rest) => {
+      const g = TRIGRAM[gua];
+      if(!g) return match;
+      return `${pre}<span style="font-family:serif;font-weight:700;">${g.symbol} ${g.hanja}</span>${rest}`;
+    });
+  });
+  return result;
 }
 
 // ─── 한글 조사 자동 조절 ───
@@ -1280,12 +1305,12 @@ function scoreEnergySimilarity(outerA, innerA, outerB, innerB){
 //  4. 최종 = 균형 × 0.5 + 흐름 × 0.5
 
 const WUXING_SCORE_MAP = {
-  '상생(相生)': 90,   // 내가 상대를 길러줌
-  '피생(被生)': 85,   // 상대가 나를 길러줌
-  '비화(比和)': 70,   // 같은 기운 (좁은 공명, 성장엔 부족)
-  '중립':      55,   // 간접 관계
-  '피극(被剋)': 40,   // 상대가 나를 제어
-  '상극(相剋)': 30,   // 내가 상대를 제어
+  '상생(相生)': 85,   // 내가 상대를 길러줌
+  '피생(被生)': 78,   // 상대가 나를 길러줌
+  '비화(比和)': 60,   // 같은 기운 (좁은 공명)
+  '중립':      45,   // 간접 관계
+  '피극(被剋)': 32,   // 상대가 나를 제어
+  '상극(相剋)': 22,   // 내가 상대를 제어
 };
 
 // 8괘별 오행 매핑: 건·태=金, 리=火, 진·손=木, 감=水, 간·곤=土
@@ -1328,7 +1353,8 @@ function wuxingRelationScore(a, b){
 }
 
 // 균형 점수: 합산 분포가 균등(각 20%)에 얼마나 가까운가
-// 스케일 조정: 현실에서 TVD 40~60이 흔하므로 이 범위에서 더 예민하게 반응
+// 현실에서 랜덤 분포 TVD가 30~50에 많이 몰려 80점대가 너무 많이 나옴
+// → 스케일을 더 엄격하게
 function wuxingBalanceScore(wuA, wuB){
   const combined = {};
   let total = 0;
@@ -1337,53 +1363,78 @@ function wuxingBalanceScore(wuA, wuB){
     total += combined[w];
   });
   WUXING_LIST.forEach(w => { combined[w] = (combined[w] / total) * 100; });
-  // 균등 분포(각 20%)와의 TVD
   let tvd = 0;
   WUXING_LIST.forEach(w => { tvd += Math.abs(combined[w] - 20); });
-  tvd /= 2;  // 정규화 (범위 0~80)
-  // 실제 분포의 TVD는 대부분 10~50 사이에 몰림
-  // 60 이상부터는 확실한 편중이므로 이 지점이 이미 낮은 점수여야 함
-  // → 스케일: TVD 0 → 100점, TVD 60 이상 → 0점에 근접
-  const normalized = Math.min(tvd / 60, 1);  // 0~1
-  // power 곡선 (편중이 클수록 가파르게 감점)
-  const score = 100 * (1 - Math.pow(normalized, 1.3));
+  tvd /= 2;
+  // 분모 50, power 0.7 → 작은 편차에서도 감점이 크게 작동
+  // TVD 10 → 66점, TVD 20 → 52점, TVD 30 → 40점
+  const normalized = Math.min(tvd / 50, 1);
+  const score = 100 * (1 - Math.pow(normalized, 0.7));
   return Math.max(0, Math.min(100, score));
 }
 
 // 흐름 점수: 모든 오행 쌍의 관계점수 × 비율곱 가중평균
 function wuxingFlowScore(wuA, wuB){
-  // 각 분포의 비율(%)로 정규화
   const sumA = WUXING_LIST.reduce((s,w) => s + wuA[w], 0);
   const sumB = WUXING_LIST.reduce((s,w) => s + wuB[w], 0);
   const pA = {}, pB = {};
   WUXING_LIST.forEach(w => {
-    pA[w] = wuA[w] / sumA;  // 0~1
+    pA[w] = wuA[w] / sumA;
     pB[w] = wuB[w] / sumB;
   });
-  // 25개 쌍(5×5) 교차 가중평균
   let weightedSum = 0;
   let totalWeight = 0;
   WUXING_LIST.forEach(a => {
     WUXING_LIST.forEach(b => {
-      const weight = pA[a] * pB[b];  // 두 비율의 곱 (둘 다 크면 영향도 큼)
+      const weight = pA[a] * pB[b];
       const relScore = wuxingRelationScore(a, b);
       weightedSum += relScore * weight;
       totalWeight += weight;
     });
   });
-  return totalWeight > 0 ? weightedSum / totalWeight : 60;
+  const raw = totalWeight > 0 ? weightedSum / totalWeight : 45;
+  // 가중평균은 대부분 35~55로 수렴 → stretch 적용
+  // 중심점 45 기준 편차 2.0배 증폭
+  const CENTER = 45;
+  const STRETCH = 2.0;
+  const stretched = CENTER + (raw - CENTER) * STRETCH;
+  return Math.max(0, Math.min(100, stretched));
 }
 
 // 최종 오행 관계 점수 (0~100) — 균형 50 + 흐름 50
+// ─── 점수 정규화 ─────────────────────────────────────
+// 2000쌍 랜덤 시뮬로 측정한 평균/표준편차 기반 Z-score 정규화
+// 목적: 실측 분포를 0~100 스케일 전체에 종 모양으로 퍼뜨리기
+// 등급 분포 목표: 15/20/30/20/15% (중심 55, spread 15)
+const SCORE_CENTER = 55;  // 중심점 (정규분포 중앙)
+const SCORE_SPREAD = 15;
+const SCORE_NORM = {
+  balance:  { avg: 54,   std: 10 },
+  flow:     { avg: 64,   std: 3  },
+  wuxing:   { avg: 59,   std: 5.5 },
+  affinity: { avg: 58.6, std: 6.9 },
+};
+
+function normalizeScore(raw, params){
+  const z = (raw - params.avg) / params.std;
+  const score = SCORE_CENTER + z * SCORE_SPREAD;
+  return Math.max(0, Math.min(100, score));
+}
+
 function scoreWuxingHarmony(outerA, innerA, outerB, innerB){
   const wuA = toWuxingDistribution(outerA, innerA);
   const wuB = toWuxingDistribution(outerB, innerB);
-  const balance = wuxingBalanceScore(wuA, wuB);
-  const flow    = wuxingFlowScore(wuA, wuB);
+  const balanceRaw = wuxingBalanceScore(wuA, wuB);
+  const flowRaw    = wuxingFlowScore(wuA, wuB);
+
+  // 정규화 (100점 만점 전체 스펙트럼 활용)
+  const balance = normalizeScore(balanceRaw, SCORE_NORM.balance);
+  const flow    = normalizeScore(flowRaw,    SCORE_NORM.flow);
+  const totalRaw = balanceRaw * 0.5 + flowRaw * 0.5;
+  const total    = normalizeScore(totalRaw, SCORE_NORM.wuxing);
+
   return {
-    total: balance * 0.5 + flow * 0.5,
-    balance,
-    flow,
+    total, balance, flow,
     wuA, wuB,
   };
 }
@@ -1396,22 +1447,26 @@ function scoreYinYangBalance(yangA, yangB){
   const gap = Math.abs(yangA - yangB);
   const bothExtreme = Math.abs(dA) > 20 && Math.abs(dB) > 20;
 
-  if(!sameDir && gap > 20) return 95;         // 반대 방향, 큰 차이 → 이상적 보완
-  if(!sameDir && gap > 5)  return 80;         // 반대 방향, 부드러운 보완
-  if(sameDir && bothExtreme) return 45;       // 같은 방향, 둘 다 극단 → 편중
-  if(sameDir && gap < 10)  return 70;         // 같은 방향, 잔잔한 공명
-  return 65;                                   // 기타
+  if(!sameDir && gap > 20) return 90;         // 반대 방향, 큰 차이 → 이상적 보완
+  if(!sameDir && gap > 5)  return 72;         // 반대 방향, 부드러운 보완
+  if(sameDir && bothExtreme) return 35;       // 같은 방향, 둘 다 극단 → 편중
+  if(sameDir && gap < 10)  return 62;         // 같은 방향, 잔잔한 공명
+  return 55;                                   // 기타
 }
 
 // 최종 관계 친화도 계산
 function calcRelationalAffinity({outerA, innerA, outerB, innerB, meOuterTrig, meInnerTrig, youOuterTrig, youInnerTrig, yangMe, yangYou}){
   const energyScore = scoreEnergySimilarity(outerA, innerA, outerB, innerB);
-  const wuxingResult = scoreWuxingHarmony(outerA, innerA, outerB, innerB);  // 이제 객체 반환
-  const wuxingScore = wuxingResult.total;
+  const wuxingResult = scoreWuxingHarmony(outerA, innerA, outerB, innerB);  // 이미 정규화됨
+  const wuxingScore = wuxingResult.total;  // 정규화된 오행 총점
   const yyScore = scoreYinYangBalance(yangMe, yangYou);
 
-  // 가중치 결합
-  const affinity = (energyScore * 0.4) + (wuxingScore * 0.4) + (yyScore * 0.2);
+  // 가중치 결합 (각 점수는 이미 0~100 스케일에서 합리적으로 분포)
+  const affinityRaw = (energyScore * 0.4) + (wuxingScore * 0.4) + (yyScore * 0.2);
+
+  // 최종 친화도 정규화: 2000쌍 기준 avg≈62, std≈4 → 50±15점 스펙트럼
+  // 단, 구성요소 정규화 덕분에 스프레드가 더 커져 있을 수 있어 재측정 필요
+  const affinity = normalizeScore(affinityRaw, SCORE_NORM.affinity);
 
   return {
     total: affinity,
@@ -1424,10 +1479,12 @@ function calcRelationalAffinity({outerA, innerA, outerB, innerB, meOuterTrig, me
 }
 
 // 친화도 등급 (점수 기반 5단계)
+// 목표 분포: 깊은공명 15% / 조화 20% / 서로채움 30% / 단련 20% / 거리먼인연 15%
+// (정규분포 기준, 중심 55 spread 15)
 function gradeAffinity(score){
-  if(score >= 85) return {tag:'깊은 공명', desc:'자연스럽게 하나로 흐르는 깊은 인연', color:'#6B8E5A'};
-  if(score >= 70) return {tag:'조화로운 만남', desc:'서로에게 쉽게 스며드는 어울림', color:'#8FAB7A'};
-  if(score >= 55) return {tag:'서로를 채우는 관계', desc:'다름이 강점이 되어 보완되는 조합', color:'#D4B170'};
+  if(score >= 70) return {tag:'깊은 공명', desc:'자연스럽게 하나로 흐르는 깊은 인연', color:'#6B8E5A'};
+  if(score >= 61) return {tag:'조화로운 만남', desc:'서로에게 쉽게 스며드는 어울림', color:'#8FAB7A'};
+  if(score >= 49) return {tag:'서로를 채우는 관계', desc:'다름이 강점이 되어 보완되는 조합', color:'#D4B170'};
   if(score >= 40) return {tag:'함께 단련되는 관계', desc:'부딪힘 속에서 성장이 빚어지는 사이', color:'#B8924A'};
   return                {tag:'거리가 먼 인연', desc:'의식적인 다가감이 필요한 관계', color:'#A63D40'};
 }
@@ -1996,129 +2053,162 @@ function renderReport(me, you){
       </div>
       <p class="section-sub">두 사람의 에너지 진단을 바탕으로 한 실천 지침</p>
 
-      <!-- 섹션 개요 -->
-      <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.85;background:rgba(0,45,98,.04);padding:18px 22px;border-radius:10px;margin-bottom:24px;word-break:keep-all;">
-        지금까지의 분석 — <strong>친화도, 오행, 공명/충돌, 서로의 시선</strong> — 을 바탕으로,
-        이 관계가 가진 <strong>고유한 결</strong>에 맞춘 실천적 가이드를 정리했습니다.
-        "좋다/나쁘다"의 판단이 아닌, <strong>두 사람의 고유한 조합에서 빛나는 지점과 조심할 지점</strong>에 대한 방향 제시입니다.
+      <!-- 섹션 인트로 (얇게) -->
+      <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.85;padding:4px 2px 22px 2px;word-break:keep-all;border-bottom:1px solid var(--line);margin-bottom:30px;">
+        지금까지의 분석 — <strong>친화도 · 오행 · 공명과 충돌 · 서로의 시선</strong> — 을 바탕으로, 이 관계가 가진 <strong>고유한 결</strong>에 맞춘 실천적 가이드를 정리했습니다. "좋다/나쁘다"의 판단이 아닌, <strong>두 사람의 고유한 조합에서 빛나는 지점과 조심할 지점</strong>에 대한 방향 제시입니다.
       </div>
 
-      <!-- 1. 핵심 자산 (강점) -->
-      <div style="background:linear-gradient(135deg, rgba(107,142,90,.07) 0%, rgba(107,142,90,.02) 100%);border:1px solid rgba(107,142,90,.25);border-radius:14px;padding:24px 26px;margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <span style="font-size:1.3rem;">🌟</span>
-          <div style="font-family:var(--font-display);font-weight:800;color:var(--sage);font-size:1.05rem;">
-            우리 관계의 핵심 자산
+      <!-- 1. 핵심 자산 (STRENGTHS) -->
+      <div style="margin-bottom:36px;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(107,142,90,.35);flex-wrap:wrap;">
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span style="font-family:var(--font-display);font-size:.68rem;letter-spacing:3px;color:var(--sage);font-weight:700;">01 · STRENGTHS</span>
+            <h3 style="margin:0;font-family:var(--font-display);font-size:1.18rem;font-weight:700;color:var(--ink);letter-spacing:-.015em;">
+              우리 관계의 핵심 자산
+            </h3>
           </div>
-          <span style="font-size:.75rem;color:var(--muted);font-family:var(--font-display);letter-spacing:1px;">STRENGTHS</span>
+          <span style="font-family:var(--font-serif);font-size:.78rem;color:var(--muted);font-style:italic;">두 사람이 함께 빛나는 자리</span>
         </div>
-        <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.9;word-break:keep-all;">
+        <div style="font-family:var(--font-serif);font-size:.93rem;color:var(--text);line-height:1.95;word-break:keep-all;padding-left:4px;">
           ${generateStrengths(affinity, wuBalance, wuFlow, resonance, resonanceInner, meName, youName, meOuter, youOuter, meInner, youInner)}
         </div>
       </div>
 
-      <!-- 2. 주의해야 할 지점 -->
-      <div style="background:linear-gradient(135deg, rgba(184,146,74,.07) 0%, rgba(184,146,74,.02) 100%);border:1px solid rgba(184,146,74,.25);border-radius:14px;padding:24px 26px;margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <span style="font-size:1.3rem;">⚠️</span>
-          <div style="font-family:var(--font-display);font-weight:800;color:var(--gold);font-size:1.05rem;">
-            우리가 주의해야 할 지점
+      <!-- 2. 주의점 (WATCHOUTS) -->
+      <div style="margin-bottom:36px;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(184,146,74,.4);flex-wrap:wrap;">
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span style="font-family:var(--font-display);font-size:.68rem;letter-spacing:3px;color:var(--gold);font-weight:700;">02 · WATCHOUTS</span>
+            <h3 style="margin:0;font-family:var(--font-display);font-size:1.18rem;font-weight:700;color:var(--ink);letter-spacing:-.015em;">
+              우리가 주의해야 할 지점
+            </h3>
           </div>
-          <span style="font-size:.75rem;color:var(--muted);font-family:var(--font-display);letter-spacing:1px;">WATCHOUTS</span>
+          <span style="font-family:var(--font-serif);font-size:.78rem;color:var(--muted);font-style:italic;">미리 알면 피할 수 있는 지점</span>
         </div>
-        <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.9;word-break:keep-all;">
+        <div style="font-family:var(--font-serif);font-size:.93rem;color:var(--text);line-height:1.95;word-break:keep-all;padding-left:4px;">
           ${generateWatchouts(affinity, clash, clashInner, meName, youName)}
         </div>
       </div>
 
-      <!-- 3. 대화의 기술 -->
-      <div style="background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px 26px;margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-          <span style="font-size:1.3rem;">💬</span>
-          <div style="font-family:var(--font-display);font-weight:800;color:var(--navy);font-size:1.05rem;">
-            대화의 기술
+      <!-- 3. 대화의 기술 (COMMUNICATION) -->
+      <div style="margin-bottom:36px;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(0,45,98,.3);flex-wrap:wrap;">
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span style="font-family:var(--font-display);font-size:.68rem;letter-spacing:3px;color:var(--navy);font-weight:700;">03 · COMMUNICATION</span>
+            <h3 style="margin:0;font-family:var(--font-display);font-size:1.18rem;font-weight:700;color:var(--ink);letter-spacing:-.015em;">
+              대화의 기술
+            </h3>
           </div>
-          <span style="font-size:.75rem;color:var(--muted);font-family:var(--font-display);letter-spacing:1px;">COMMUNICATION</span>
+          <span style="font-family:var(--font-serif);font-size:.78rem;color:var(--muted);font-style:italic;">말의 결을 서로에게 맞추는 법</span>
         </div>
-        <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.9;word-break:keep-all;">
-          ${generateCommunicationTips(meOuter, youOuter, meInner, youInner, meName, youName)}
-        </div>
-      </div>
-
-      <!-- 4. 함께 성장하기 위한 실천 -->
-      <div style="background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px 26px;margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-          <span style="font-size:1.3rem;">🛠</span>
-          <div style="font-family:var(--font-display);font-weight:800;color:var(--navy);font-size:1.05rem;">
-            함께 성장하기 위한 실천
-          </div>
-          <span style="font-size:.75rem;color:var(--muted);font-family:var(--font-display);letter-spacing:1px;">GROWTH ACTIONS</span>
-        </div>
-        <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.9;word-break:keep-all;">
-          ${generateGrowthActions(personaData, innateData, meName, youName)}
+        <div style="font-family:var(--font-serif);font-size:.93rem;color:var(--text);line-height:1.95;word-break:keep-all;padding-left:4px;">
+          ${generateCommunicationTips(meOuter, youOuter, meInner, youInner, meName, youName, meOuterPct, meInnerPct, youOuterPct, youInnerPct)}
         </div>
       </div>
 
-      <!-- 5. 금기 (Deal Breakers) -->
-      <div style="background:linear-gradient(135deg, rgba(166,61,64,.05) 0%, rgba(166,61,64,.02) 100%);border:1px solid rgba(166,61,64,.25);border-radius:14px;padding:24px 26px;margin-bottom:20px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-          <span style="font-size:1.3rem;">🚫</span>
-          <div style="font-family:var(--font-display);font-weight:800;color:var(--crimson);font-size:1.05rem;">
-            절대 하지 말아야 할 것
+      <!-- 4. 성장 실천 (GROWTH) -->
+      <div style="margin-bottom:36px;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(107,76,154,.3);flex-wrap:wrap;">
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span style="font-family:var(--font-display);font-size:.68rem;letter-spacing:3px;color:#6B4C9A;font-weight:700;">04 · GROWTH</span>
+            <h3 style="margin:0;font-family:var(--font-display);font-size:1.18rem;font-weight:700;color:var(--ink);letter-spacing:-.015em;">
+              함께 성장하기 위한 실천
+            </h3>
           </div>
-          <span style="font-size:.75rem;color:var(--muted);font-family:var(--font-display);letter-spacing:1px;">DEAL BREAKERS</span>
+          <span style="font-family:var(--font-serif);font-size:.78rem;color:var(--muted);font-style:italic;">관계를 깊어지게 하는 행동</span>
         </div>
-        <div style="font-family:var(--font-serif);font-size:.9rem;color:var(--text);line-height:1.9;word-break:keep-all;">
-          <div style="margin-bottom:14px;padding:12px 14px;background:rgba(166,61,64,.04);border-left:3px solid var(--crimson);border-radius:6px;">
-            <strong style="color:var(--crimson);font-family:var(--font-display);">사회적 관계에서</strong><br>
-            ${personaData.taboo && personaData.taboo.trim() ? personaData.taboo : `
-              <div style="color:#c44;font-size:.85rem;padding:8px 0;">
-                ⚠ <strong>${meOuter}_${youOuter}</strong> 조합의 taboo 로드 실패<br>
-                <div style="background:#fff8f8;padding:8px;margin-top:6px;border-radius:4px;font-family:monospace;font-size:.75rem;color:#333;">
-                  → DB11_Atomic 전체 키 개수: <strong>${(window.DB11_Atomic && Object.keys(window.DB11_Atomic).length) || 0}</strong>개<br>
-                  → ${meOuter}_${youOuter} 키 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter])}</strong><br>
-                  → persona 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter]?.persona)}</strong><br>
-                  → persona.taboo 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter]?.persona?.taboo)}</strong><br>
-                  → persona.taboo 길이: <strong>${(window.DB11_Atomic && window.DB11_Atomic[meOuter+'_'+youOuter]?.persona?.taboo?.length) || 0}</strong>
-                </div>
-              </div>`}
+        <div style="font-family:var(--font-serif);font-size:.93rem;color:var(--text);line-height:1.95;word-break:keep-all;padding-left:4px;">
+          ${generateGrowthActions(personaData, innateData, meName, youName, meOuter, youOuter, meInner, youInner, affinity, resonance, clash)}
+        </div>
+      </div>
+
+      <!-- 5. 금기 (DEAL BREAKERS) -->
+      <div style="margin-bottom:28px;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(166,61,64,.35);flex-wrap:wrap;">
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span style="font-family:var(--font-display);font-size:.68rem;letter-spacing:3px;color:var(--crimson);font-weight:700;">05 · DEAL BREAKERS</span>
+            <h3 style="margin:0;font-family:var(--font-display);font-size:1.18rem;font-weight:700;color:var(--ink);letter-spacing:-.015em;">
+              절대 하지 말아야 할 것
+            </h3>
           </div>
-          <div style="padding:12px 14px;background:rgba(166,61,64,.04);border-left:3px solid var(--crimson);border-radius:6px;">
-            <strong style="color:var(--crimson);font-family:var(--font-display);">친밀한 관계에서</strong><br>
-            ${innateData.taboo && innateData.taboo.trim() ? innateData.taboo : `
-              <div style="color:#c44;font-size:.85rem;padding:8px 0;">
-                ⚠ <strong>${meInner}_${youInner}</strong> 조합의 taboo 로드 실패<br>
-                <div style="background:#fff8f8;padding:8px;margin-top:6px;border-radius:4px;font-family:monospace;font-size:.75rem;color:#333;">
-                  → ${meInner}_${youInner} 키 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner])}</strong><br>
-                  → innate 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner]?.innate)}</strong><br>
-                  → innate.taboo 존재: <strong>${!!(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner]?.innate?.taboo)}</strong><br>
-                  → innate.taboo 길이: <strong>${(window.DB11_Atomic && window.DB11_Atomic[meInner+'_'+youInner]?.innate?.taboo?.length) || 0}</strong>
-                </div>
-              </div>`}
+          <span style="font-family:var(--font-serif);font-size:.78rem;color:var(--muted);font-style:italic;">관계를 무너뜨리는 선 넘는 행위</span>
+        </div>
+
+        <!-- 사회적 관계 (네이비 톤) -->
+        <div style="background:linear-gradient(180deg, rgba(0,45,98,.04) 0%, rgba(0,45,98,.01) 100%);border:1px solid rgba(0,45,98,.18);border-radius:10px;padding:20px 24px;margin-bottom:12px;position:relative;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px dashed rgba(0,45,98,.2);">
+            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--navy);box-shadow:0 0 0 3px rgba(0,45,98,.12);"></span>
+            <span style="font-family:var(--font-display);font-size:.78rem;letter-spacing:2px;color:var(--navy);font-weight:700;">사회적 관계에서</span>
+          </div>
+          <div style="font-family:var(--font-serif);font-size:.93rem;color:var(--text);line-height:1.95;word-break:keep-all;">
+            ${personaData.taboo && personaData.taboo.trim() ? convertTrigramRefsInText(personaData.taboo) : `<span style="color:#c44;font-size:.85rem;">⚠ <strong>${meOuter}_${youOuter}</strong> 조합의 세부 해석이 로드되지 않았습니다. 페이지를 새로고침해 주세요.</span>`}
+          </div>
+        </div>
+
+        <!-- 친밀한 관계 (버건디 톤) -->
+        <div style="background:linear-gradient(180deg, rgba(139,46,62,.04) 0%, rgba(139,46,62,.01) 100%);border:1px solid rgba(139,46,62,.2);border-radius:10px;padding:20px 24px;position:relative;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px dashed rgba(139,46,62,.25);">
+            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#8B2E3E;box-shadow:0 0 0 3px rgba(139,46,62,.14);"></span>
+            <span style="font-family:var(--font-display);font-size:.78rem;letter-spacing:2px;color:#8B2E3E;font-weight:700;">친밀한 관계에서</span>
+          </div>
+          <div style="font-family:var(--font-serif);font-size:.93rem;color:var(--text);line-height:1.95;word-break:keep-all;">
+            ${innateData.taboo && innateData.taboo.trim() ? convertTrigramRefsInText(innateData.taboo) : `<span style="color:#c44;font-size:.85rem;">⚠ <strong>${meInner}_${youInner}</strong> 조합의 세부 해석이 로드되지 않았습니다. 페이지를 새로고침해 주세요.</span>`}
           </div>
         </div>
       </div>
 
-      <!-- 낙관 도장 -->
-      <div style="text-align:right;margin-top:30px;padding-top:20px;border-top:1px dashed var(--line);">
-        <div style="display:inline-flex;align-items:center;gap:10px;">
-          <div style="font-family:var(--font-serif);font-size:.78rem;color:var(--muted);line-height:1.4;text-align:right;">
-            ${dateStr}<br>
-            <span style="font-size:.7rem;">OMST Intelligence Engine</span>
-          </div>
-          <div style="width:56px;height:56px;border:2px solid var(--crimson);border-radius:4px;display:flex;align-items:center;justify-content:center;font-family:serif;font-weight:bold;color:var(--crimson);font-size:.9rem;line-height:1.1;text-align:center;letter-spacing:-1px;transform:rotate(-3deg);background:rgba(166,61,64,.03);">
-            OMST<br>v3.0
+    </div>
+
+    <!-- VI. 인연 에세이 (마무리) -->
+    <div class="section" style="margin-top:50px;">
+      <div style="text-align:center;padding:70px 30px 60px;background:linear-gradient(180deg, #fafaf7 0%, #fff 100%);border-radius:18px;border:1px solid var(--line);position:relative;overflow:hidden;">
+
+        <!-- 본문 에세이 -->
+        <div style="max-width:560px;margin:0 auto;font-family:var(--font-serif);color:var(--text);line-height:2.05;word-break:keep-all;">
+
+          <p style="font-size:1.1rem;color:var(--ink);margin:0 0 24px 0;font-weight:500;letter-spacing:-.01em;">
+            억겁의 시간 속에서 스치는 옷깃 하나에도<br>
+            <span style="color:var(--gold);">오백 생의 인연</span>이 쌓였다 합니다.
+          </p>
+
+          <p style="font-size:.95rem;margin:0 0 20px 0;color:var(--text);">
+            그러니 지금 이 자리에서 <strong>마주한 한 사람</strong>은 ―<br>
+            우연이 아닌, 헤아릴 수 없는 시간의 결이 교차한 자리입니다.
+          </p>
+
+          <p style="font-size:.95rem;margin:0 0 20px 0;color:var(--text);">
+            괘(卦)가 말하는 조화도, 어긋남도, 충돌도 ―<br>
+            결국 <strong>서로를 비추어 깨닫기 위한 거울</strong>일 뿐입니다.<br>
+            닮아서 배우고, 달라서 넓어지는 것이 인연의 본질입니다.
+          </p>
+
+          <p style="font-size:.95rem;margin:0 0 28px 0;color:var(--text);">
+            점수가 높든 낮든, 두 사람이 함께한 모든 순간은<br>
+            다시 오지 않을 <strong>단 한 번의 지금</strong>입니다.<br>
+            그 시간을 소중히 여기고, 서로의 결을 다정하게 바라봐 주세요.
+          </p>
+
+          <!-- 마지막 문구 강조 -->
+          <div style="margin-top:32px;padding-top:24px;border-top:1px dashed rgba(184,146,74,.4);">
+            <p style="font-family:var(--font-display);font-size:1rem;color:var(--gold);margin:0;letter-spacing:.02em;font-weight:600;line-height:1.8;">
+              "모든 만남은 기적이며,<br>모든 관계는 수행(修行)이다."
+            </p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- FOOTER -->
-    <hr class="divider">
-    <div class="footer-note">
-      본 리포트는 주역 64괘와 오행의 원리를 기반으로 한 관계 분석이며,<br>
-      두 사람의 에너지가 만나 빚어내는 흐름을 문자로 기록한 것입니다.<br>
-      <div class="copy">ANALYSIS DATE : ${dateStr} &nbsp;·&nbsp; OMST™ Intelligence Engine v3.0 &nbsp;·&nbsp; © 2026 OMST ALL RIGHTS RESERVED</div>
+    <!-- 로고 푸터 -->
+    <div style="text-align:center;padding:50px 20px 30px;">
+      <img src="Omst_Logo_final.svg" alt="OMST" style="width:200px;max-width:60%;height:auto;display:block;margin:0 auto 20px auto;opacity:.75;">
+      <div style="font-family:var(--font-serif);font-size:.82rem;color:var(--muted);line-height:1.8;word-break:keep-all;margin-bottom:12px;">
+        본 리포트는 주역 64괘와 오행의 원리를 기반으로 한 관계 분석입니다.<br>
+        두 사람의 에너지가 만나 빚어내는 흐름을 문자로 기록한 것입니다.
+      </div>
+      <div style="font-family:var(--font-display);font-size:.68rem;color:#b5b5b5;letter-spacing:1.5px;margin-top:16px;">
+        ANALYSIS DATE · ${dateStr}&nbsp;&nbsp;|&nbsp;&nbsp;OMST™ Intelligence Engine v3.0<br>
+        © 2026 OMST ALL RIGHTS RESERVED
+      </div>
     </div>
   `;
 
@@ -3166,131 +3256,503 @@ function hexToRgba(hex, alpha){
 
 // 1. 핵심 자산 (강점) - 친화도·오행·공명 기반
 function generateStrengths(affinity, wuBalance, wuFlow, resonance, resonanceInner, meName, youName, meOuter, youOuter, meInner, youInner){
-  const items = [];
+  const cards = [];
 
-  // 친화도 전반
+  // ─ 1. 친화도 강점
   if(affinity.total >= 75){
-    items.push(`두 사람의 에너지 친화도가 <strong>${affinity.total.toFixed(0)}점</strong>으로 매우 높아, 서로의 존재 자체가 자연스러운 편안함을 주는 관계입니다. 억지로 맞추지 않아도 함께 있는 시간이 쉬워집니다.`);
+    cards.push({
+      icon:'✨', tag:'HIGH AFFINITY', title:'깊은 친화',
+      score: affinity.total.toFixed(0),
+      body:`에너지 친화도 <strong>${affinity.total.toFixed(0)}점</strong> — 서로의 존재가 자연스러운 편안함을 주는 드문 관계입니다.`,
+      color:'#4A7A5C', bg:'rgba(74,122,92,.06)', border:'rgba(74,122,92,.25)'
+    });
   } else if(affinity.total >= 55){
-    items.push(`친화도 <strong>${affinity.total.toFixed(0)}점</strong>으로, 서로 다른 매력이 섞이며 풍요로운 균형을 만드는 관계입니다. 완전히 같지도 완전히 다르지도 않은 <strong>건강한 상보성</strong>이 있습니다.`);
+    cards.push({
+      icon:'🌿', tag:'BALANCED', title:'건강한 상보성',
+      score: affinity.total.toFixed(0),
+      body:`친화도 <strong>${affinity.total.toFixed(0)}점</strong> — 서로 다른 매력이 섞이며 풍요로운 균형을 만듭니다.`,
+      color:'var(--sage)', bg:'rgba(107,142,90,.06)', border:'rgba(107,142,90,.25)'
+    });
   } else {
-    items.push(`친화도 <strong>${affinity.total.toFixed(0)}점</strong>의 관계는 자동으로 흐르지는 않지만, 서로의 다름을 인정하고 다가서는 순간 <strong>깊이 있는 이해의 관계</strong>로 자랄 수 있습니다. 편안함보다는 각성의 관계입니다.`);
+    cards.push({
+      icon:'🌱', tag:'AWAKENING', title:'각성의 관계',
+      score: affinity.total.toFixed(0),
+      body:`친화도 <strong>${affinity.total.toFixed(0)}점</strong> — 자동으로 흐르진 않지만, 의식적으로 다가설 때 깊이 있는 이해로 자랍니다.`,
+      color:'#8FAB7A', bg:'rgba(143,171,122,.06)', border:'rgba(143,171,122,.25)'
+    });
   }
 
-  // 오행 균형
+  // ─ 2. 오행 균형
   if(wuBalance >= 70){
-    items.push(`두 사람의 오행 분포가 합쳐졌을 때 <strong>고르게 균형을 이루는 드문 조합</strong>입니다. 한 사람에게 부족한 기운을 다른 사람이 자연스럽게 채워줍니다.`);
+    cards.push({
+      icon:'⚖️', tag:'ELEMENTAL BALANCE', title:'오행의 조화',
+      score: wuBalance.toFixed(0),
+      body:`두 사람의 오행 분포가 합쳐졌을 때 <strong>고르게 균형</strong>을 이룹니다. 한쪽의 부족함을 다른 쪽이 자연스럽게 채웁니다.`,
+      color:'#6B4C9A', bg:'rgba(107,76,154,.06)', border:'rgba(107,76,154,.25)'
+    });
   }
 
-  // 오행 흐름
+  // ─ 3. 오행 흐름
   if(wuFlow >= 70){
-    items.push(`오행 흐름도 <strong>상생의 방향</strong>이 강합니다. 함께 있을 때 서로를 길러주고 활력을 주는 에너지가 자연스럽게 흐릅니다.`);
+    cards.push({
+      icon:'🌊', tag:'FLOW', title:'상생의 흐름',
+      score: wuFlow.toFixed(0),
+      body:`<strong>상생의 방향</strong>이 강합니다. 함께 있을 때 서로를 길러주고 활력을 주는 에너지가 자연스럽게 흐릅니다.`,
+      color:'#4A7A8C', bg:'rgba(74,122,140,.06)', border:'rgba(74,122,140,.25)'
+    });
   }
 
-  // 공명점 (상괘)
+  // ─ 4. 공명점 (상괘)
   if(resonance && resonance.resonanceScore > 12){
     const t = resonance.trigram;
-    items.push(`사회적으로 두 사람 모두 <strong>${guaLabel(t)}</strong> 기질 — <strong>${TRIGRAM_TRAIT[t]}</strong> — 에 함께 반응합니다. 이것이 관계의 공통 기반이자 함께 빛날 수 있는 영역입니다.`);
+    cards.push({
+      icon:'🔆', tag:'RESONANCE · 사회', title:`${guaLabel(t)} 공명`,
+      score: null,
+      body:`두 사람 모두 <strong>${TRIGRAM_TRAIT[t]}</strong> 기질에 반응합니다. 관계의 공통 기반이자 함께 빛날 수 있는 영역입니다.`,
+      color:'var(--gold)', bg:'rgba(184,146,74,.06)', border:'rgba(184,146,74,.3)'
+    });
   }
 
-  // 내면 공명
+  // ─ 5. 내면 공명
   if(resonanceInner && resonanceInner.resonanceScore > 12 && resonanceInner.trigram !== resonance?.trigram){
     const t = resonanceInner.trigram;
-    items.push(`내면에서는 <strong>${guaLabel(t)}</strong>의 공명이 흐릅니다. 깊어질수록 서로의 <strong>${TRIGRAM_TRAIT[t]}</strong>이 맞닿아 편안한 안식처가 됩니다.`);
+    cards.push({
+      icon:'💗', tag:'RESONANCE · 내면', title:`${guaLabel(t)} 공명`,
+      score: null,
+      body:`내면의 <strong>${TRIGRAM_TRAIT[t]}</strong>이 맞닿아, 깊어질수록 편안한 안식처가 됩니다.`,
+      color:'#8B2E3E', bg:'rgba(139,46,62,.05)', border:'rgba(139,46,62,.25)'
+    });
   }
 
-  if(items.length === 0){
-    items.push('두 사람만의 독특한 조합에서 오는 강점을 일상에서 발견해보세요. 모든 관계에는 고유한 자산이 있습니다.');
+  if(cards.length === 0){
+    cards.push({
+      icon:'🕊', tag:'UNIQUE', title:'고유한 결',
+      score: null,
+      body:`두 사람만의 독특한 조합에서 오는 강점을 일상에서 발견해보세요. 모든 관계에는 고유한 자산이 있습니다.`,
+      color:'var(--muted)', bg:'rgba(140,140,140,.05)', border:'rgba(140,140,140,.2)'
+    });
   }
 
-  return '<ul style="margin:0;padding-left:20px;">' + items.map(i => `<li style="margin-bottom:10px;">${i}</li>`).join('') + '</ul>';
+  const cols = 'repeat(2, 1fr)';  // 항상 2열 고정 (3+1 불안정 방지)
+  return `
+    <div class="guide-grid-2" style="display:grid;grid-template-columns:${cols};gap:14px;">
+      ${cards.map(c => `
+        <div style="background:${c.bg};border:1px solid ${c.border};border-radius:12px;padding:18px 18px;position:relative;display:flex;flex-direction:column;">
+          <!-- 헤더: 아이콘 + 태그 + 점수 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:38px;height:38px;border-radius:50%;background:#fff;border:1.5px solid ${c.border};display:flex;align-items:center;justify-content:center;font-size:1.1rem;box-shadow:0 2px 5px rgba(0,0,0,.04);">
+                ${c.icon}
+              </div>
+              <div style="font-family:var(--font-display);font-size:.64rem;letter-spacing:2px;color:${c.color};font-weight:700;">${c.tag}</div>
+            </div>
+            ${c.score !== null ? `<div style="font-family:var(--font-display);font-size:1.3rem;font-weight:800;color:${c.color};letter-spacing:-.02em;">${c.score}</div>` : ''}
+          </div>
+          <!-- 제목 -->
+          <div style="font-family:var(--font-display);font-weight:700;color:var(--ink);font-size:1rem;margin-bottom:8px;letter-spacing:-.01em;">
+            ${c.title}
+          </div>
+          <!-- 본문 -->
+          <div style="font-family:var(--font-serif);font-size:.85rem;color:var(--text);line-height:1.75;word-break:keep-all;">
+            ${c.body}
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
 }
 
 // 2. 주의점 - 충돌·친화도 낮음 기반
 function generateWatchouts(affinity, clash, clashInner, meName, youName){
-  const items = [];
+  const cards = [];
 
-  // 친화도 낮음
   if(affinity.total < 50){
-    items.push(`친화도가 <strong>${affinity.total.toFixed(0)}점</strong>으로 낮은 편입니다. 서로의 행동을 자신의 기준으로만 해석하면 오해가 빠르게 쌓일 수 있으니, <strong>"다름 = 틀림"이 아니라는 전제</strong>를 의식적으로 유지해야 합니다.`);
+    cards.push({
+      icon:'⚠️', tag:'LOW AFFINITY',
+      title:'자동으로 흐르지 않음',
+      body:`친화도 <strong>${affinity.total.toFixed(0)}점</strong> — 서로의 행동을 자기 기준으로만 해석하면 오해가 빠르게 쌓입니다. <strong>"다름 = 틀림"이 아니라는 전제</strong>를 의식적으로 유지해야 합니다.`
+    });
   }
 
-  // 에너지 유사성 낮음 (breakdown에서)
   if(affinity.breakdown.energy.score < 40){
-    items.push(`두 사람의 기질 분포가 크게 달라, 같은 상황에서도 <strong>전혀 다른 감정·판단</strong>을 가질 수 있습니다. 상대의 반응이 이해되지 않을 때 "왜 저러지?"보다는 "어떻게 저런 결론에 이르렀을까?"를 묻는 것이 열쇠입니다.`);
+    cards.push({
+      icon:'🔀', tag:'DIFFERENT WAVELENGTHS',
+      title:'기질 분포의 큰 차이',
+      body:`같은 상황에서도 <strong>전혀 다른 감정·판단</strong>을 가질 수 있습니다. "왜 저러지?"보다는 <strong>"어떻게 저런 결론에 이르렀을까?"</strong>를 묻는 것이 열쇠입니다.`
+    });
   }
 
-  // 음양 편중
   if(affinity.breakdown.yinyang.score < 55){
-    items.push(`음양이 같은 방향으로 치우쳐 있어, 관계가 한쪽 극단으로 흐를 위험이 있습니다. <strong>둘 다 몰아붙이거나 둘 다 멈추는</strong> 패턴이 생기면 누가 반대 축을 잡아줄지 미리 약속해두는 것이 좋습니다.`);
+    cards.push({
+      icon:'🔁', tag:'YINYANG IMBALANCE',
+      title:'음양 편중',
+      body:`음양이 같은 방향으로 치우쳐, 관계가 한쪽 극단으로 흐를 위험이 있습니다. <strong>둘 다 몰아붙이거나 둘 다 멈추는</strong> 패턴이 생기면 누가 반대 축을 잡아줄지 미리 약속해두세요.`
+    });
   }
 
-  // 충돌점 (상괘)
   if(clash && clash.gap > 20){
     const t = clash.trigram;
-    items.push(`사회적 영역에서 <strong>${guaLabel(t)}</strong> 기질의 격차 — ${meName} ${clash.a.toFixed(0)}%, ${youName} ${clash.b.toFixed(0)}% — 가 큽니다. 이 영역에서 한 사람은 당연시하는 것이 다른 사람에게는 낯설기에, <strong>직장·사회생활 관련 결정</strong>에서 갈등이 자주 생길 수 있습니다.`);
+    cards.push({
+      icon:'⚡', tag:'CLASH · 사회',
+      title:`${guaLabel(t)} 영역의 격차`,
+      body:`${meName} <strong>${clash.a.toFixed(0)}%</strong>, ${youName} <strong>${clash.b.toFixed(0)}%</strong> — 한 사람이 당연시하는 것이 다른 사람에게는 낯섭니다. <strong>사회생활·업무 결정</strong>에서 갈등이 자주 생길 수 있습니다.`
+    });
   }
 
-  // 내면 충돌점
   if(clashInner && clashInner.gap > 20 && clashInner.trigram !== clash?.trigram){
     const t = clashInner.trigram;
-    items.push(`내면의 <strong>${guaLabel(t)}</strong> 기질 차이가 커서, 친밀한 순간에 <strong>감정의 결</strong>이 엇갈릴 수 있습니다. 서운함의 원인이 여기 숨어있을 가능성이 높습니다.`);
+    cards.push({
+      icon:'💔', tag:'CLASH · 내면',
+      title:`${guaLabel(t)} 내면 차이`,
+      body:`친밀한 순간에 <strong>감정의 결</strong>이 엇갈릴 수 있습니다. 이유 없는 <strong>서운함의 원인</strong>이 여기 숨어있을 가능성이 높습니다.`
+    });
   }
 
-  if(items.length === 0){
-    items.push('특별히 큰 충돌 지점은 보이지 않습니다. 다만 모든 관계는 관성적으로 흐르다 식을 수 있으니, 주기적으로 서로의 변화를 확인하는 시간이 필요합니다.');
+  if(cards.length === 0){
+    cards.push({
+      icon:'🌤', tag:'STABLE',
+      title:'특별한 충돌 없음',
+      body:`큰 충돌 지점은 보이지 않습니다. 다만 모든 관계는 관성적으로 흐르다 식을 수 있으니, 주기적으로 서로의 변화를 확인하는 시간이 필요합니다.`
+    });
   }
 
-  return '<ul style="margin:0;padding-left:20px;">' + items.map(i => `<li style="margin-bottom:10px;">${i}</li>`).join('') + '</ul>';
+  const accent = 'var(--gold)';
+  const bg = 'rgba(184,146,74,.05)';
+  const border = 'rgba(184,146,74,.25)';
+  const cols = 'repeat(2, 1fr)';  // 항상 2열 고정 (3+1 불안정 방지)
+
+  return `
+    <div class="guide-grid-2" style="display:grid;grid-template-columns:${cols};gap:14px;">
+      ${cards.map(c => `
+        <div style="background:${bg};border:1px solid ${border};border-left:3px solid ${accent};border-radius:10px;padding:18px 18px;position:relative;display:flex;flex-direction:column;">
+          <!-- 헤더 -->
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <div style="width:38px;height:38px;border-radius:50%;background:#fff;border:1.5px solid ${border};display:flex;align-items:center;justify-content:center;font-size:1.1rem;box-shadow:0 2px 5px rgba(0,0,0,.04);">
+              ${c.icon}
+            </div>
+            <div style="font-family:var(--font-display);font-size:.64rem;letter-spacing:2px;color:${accent};font-weight:700;">${c.tag}</div>
+          </div>
+          <!-- 제목 -->
+          <div style="font-family:var(--font-display);font-weight:700;color:var(--ink);font-size:.98rem;margin-bottom:8px;letter-spacing:-.01em;">
+            ${c.title}
+          </div>
+          <!-- 본문 -->
+          <div style="font-family:var(--font-serif);font-size:.85rem;color:var(--text);line-height:1.75;word-break:keep-all;">
+            ${c.body}
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
 }
 
 // 3. 대화의 기술 - 각 괘별 소통 스타일 기반
-function generateCommunicationTips(meOuter, youOuter, meInner, youInner, meName, youName){
-  // 각 괘별 "이 사람과 대화할 때"의 팁
+function generateCommunicationTips(meOuter, youOuter, meInner, youInner, meName, youName, meOuterPct, meInnerPct, youOuterPct, youInnerPct){
+  // 각 괘별 대화 팁 — 헤드라인 + 3개 핵심 포인트
   const COMM_TIP_BY_TRIGRAM = {
-    '건': (name) => `<strong>${name}</strong>와 이야기할 때는 <strong>결론부터 명확하게</strong>. 장황한 설명보다 "이것을 하자"는 단호함이 신뢰를 얻습니다.`,
-    '태': (name) => `<strong>${name}</strong>에게는 <strong>감정을 먼저 인정</strong>해준 뒤 내용을 이야기하세요. 논리 이전에 "너의 기분을 이해해"라는 표현이 대화의 문을 엽니다.`,
-    '리': (name) => `<strong>${name}</strong>는 <strong>논리적 근거</strong>를 중시합니다. 감정 호소보다는 "왜 그런지"를 구조적으로 설명할 때 설득됩니다.`,
-    '진': (name) => `<strong>${name}</strong>는 <strong>즉각적 행동</strong>을 선호합니다. 긴 회의보다 짧은 실행 제안이 효과적입니다. 망설임을 답답해합니다.`,
-    '손': (name) => `<strong>${name}</strong>에게는 <strong>부드러운 접근</strong>이 필요합니다. 직설적 지시보다 "어떻게 생각해?"로 의견을 먼저 묻는 것이 좋습니다.`,
-    '감': (name) => `<strong>${name}</strong>는 <strong>시간을 주어야</strong> 합니다. 즉답을 요구하면 닫히고, 기다려주면 깊은 통찰을 나눕니다. 침묵도 대화의 일부입니다.`,
-    '간': (name) => `<strong>${name}</strong>는 <strong>안정된 분위기</strong>에서 말문이 열립니다. 갑작스러운 화제 전환보다 차분한 일관성 있는 대화를 선호합니다.`,
-    '곤': (name) => `<strong>${name}</strong>는 <strong>판단 없는 경청</strong>에 가장 마음을 엽니다. 조언보다 "이해돼"라는 한 마디가 깊은 신뢰를 줍니다.`,
+    '건': { headline:'결론부터 명확하게', points:['장황한 설명 자제', '단호한 제안 환영', '실행 의지 보이기'] },
+    '태': { headline:'감정을 먼저 인정', points:['"이해돼"가 먼저', '논리는 그 다음', '웃으며 대화하기'] },
+    '리': { headline:'논리적 근거 제시', points:['감정 호소 지양', '구조적 설명', '이유와 맥락 명확히'] },
+    '진': { headline:'짧고 빠르게', points:['긴 회의 지양', '바로 실행 제안', '망설임 없이 결정'] },
+    '손': { headline:'부드러운 접근', points:['"어떻게 생각해?" 먼저', '직설 지시 지양', '여지 주는 표현'] },
+    '감': { headline:'시간을 주기', points:['즉답 요구 안 하기', '침묵도 대화로', '기다림이 곧 존중'] },
+    '간': { headline:'차분한 일관성', points:['갑작스런 화제 전환 지양', '안정된 분위기 유지', '천천히 깊게'] },
+    '곤': { headline:'판단 없는 경청', points:['조언 자제', '"이해돼" 한 마디', '편안한 공간 만들기'] },
   };
 
-  const items = [];
-  // 상대 기질별 팁 (내가 상대에게)
-  items.push(`<strong>${meName} → ${youName}</strong>: ${COMM_TIP_BY_TRIGRAM[youOuter](youName)}`);
-  items.push(`<strong>${youName} → ${meName}</strong>: ${COMM_TIP_BY_TRIGRAM[meOuter](meName)}`);
+  // 대화 카드 — A → B 방향 + 팁
+  const dialogueCard = (fromName, toName, toTrig, theme) => {
+    const tip = COMM_TIP_BY_TRIGRAM[toTrig];
+    const g = TRIGRAM[toTrig];
+    const accent = theme === 'navy' ? '#002D62' : '#8B2E3E';
+    const bgSoft = theme === 'navy' ? 'rgba(0,45,98,.04)' : 'rgba(139,46,62,.04)';
+    const borderColor = theme === 'navy' ? 'rgba(0,45,98,.18)' : 'rgba(139,46,62,.2)';
+    return `
+      <div style="background:${bgSoft};border:1px solid ${borderColor};border-radius:14px;padding:22px 22px;position:relative;">
+        <!-- 방향 표시: FROM → TO -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px dashed ${borderColor};">
+          <div style="font-family:var(--font-display);font-size:.72rem;color:var(--muted);font-weight:600;">${fromName}</div>
+          <div style="flex:1;position:relative;height:2px;background:linear-gradient(90deg, transparent 0%, ${accent} 100%);opacity:.4;"></div>
+          <div style="font-family:var(--font-display);font-size:1rem;color:${accent};font-weight:800;">→</div>
+          <div style="font-family:var(--font-display);font-size:.9rem;color:${accent};font-weight:800;">${toName}</div>
+          <div style="font-family:serif;font-size:1.1rem;color:${accent};margin-left:2px;">${g.symbol}<span style="font-size:.85rem;margin-left:3px;">${g.hanja}</span></div>
+        </div>
+        <!-- 헤드라인 -->
+        <div style="text-align:center;font-family:var(--font-display);font-size:1.05rem;font-weight:700;color:${accent};margin-bottom:14px;letter-spacing:-.01em;">
+          "${tip.headline}"
+        </div>
+        <!-- 포인트 3개 -->
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${tip.points.map(p => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid ${borderColor};">
+              <span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${accent};"></span>
+              <span style="font-family:var(--font-serif);font-size:.84rem;color:var(--text);">${p}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  };
 
-  // 내면 소통 (하괘 기준, 상괘와 다를 때만)
-  if(meInner !== meOuter){
-    items.push(`친밀해졌을 때 <strong>${meName}</strong>의 내면은 <strong>${guaLabel(meInner)}</strong>의 결로 바뀝니다. 공적 자리에서와는 다른 언어가 필요해집니다.`);
-  }
-  if(youInner !== youOuter && meInner !== youInner){
-    items.push(`마찬가지로 <strong>${youName}</strong>도 가까워지면 <strong>${guaLabel(youInner)}</strong>의 모습이 드러납니다. 공적 자아와 사적 자아를 섞어서 대응하면 오해가 생길 수 있습니다.`);
+  const dialogueSection = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+      ${dialogueCard(meName, youName, youOuter, 'navy')}
+      ${dialogueCard(youName, meName, meOuter, 'sky')}
+    </div>
+  `;
+
+  // 내면 특징 (해당 괘 상태일 때의 모습 3가지)
+  const INNER_TRAITS = {
+    '건': ['강한 추진력과 결단', '목표 지향의 몰입', '책임감 있는 주도'],
+    '태': ['감정의 투명한 표현', '즐거움을 나누는 성향', '친근하고 다정한 교감'],
+    '리': ['명민한 통찰과 분석', '밝은 표현력', '빛나는 존재감'],
+    '진': ['즉각적인 행동력', '도전과 돌파의 기운', '새로움을 끌어들임'],
+    '손': ['부드러운 침투력', '섬세한 조율', '유연한 적응'],
+    '감': ['깊은 사색과 응축', '감정의 무게 있는 흐름', '조용한 통찰'],
+    '간': ['묵직한 안정감', '중심을 지키는 고요', '자기만의 리듬'],
+    '곤': ['포용과 수용의 넓이', '헌신과 품어주는 결', '조용한 지지'],
+  };
+
+  // 경합괘 판정 헬퍼 (1위-2위 격차가 5% 미만이면 경합)
+  const CONTEST_THRESHOLD = 5.0;
+  const findContestant = (pcts, dominant) => {
+    const sorted = Object.entries(pcts).sort((a,b) => b[1] - a[1]);
+    const top = sorted[0], second = sorted[1];
+    const gap = top[1] - second[1];
+    if(gap < CONTEST_THRESHOLD){
+      // 1위가 dominant와 같으면 2위가 경합괘, 다르면 1위가 경합괘
+      const contestTrig = top[0] === dominant ? second[0] : top[0];
+      return { trigram: contestTrig, gap, topPct: top[1], contestPct: pcts[contestTrig] };
+    }
+    return null;
+  };
+
+  // 각 층위(외면/내면)에서 경합괘 찾기
+  const contests = [];
+
+  const meOuterContest = findContestant(meOuterPct, meOuter);
+  if(meOuterContest){
+    contests.push({
+      name: meName, layer: '외면', mainTrig: meOuter, contestTrig: meOuterContest.trigram,
+      mainPct: meOuterPct[meOuter], contestPct: meOuterContest.contestPct, theme: 'navy'
+    });
   }
 
-  return '<ul style="margin:0;padding-left:20px;">' + items.map(i => `<li style="margin-bottom:10px;">${i}</li>`).join('') + '</ul>';
+  const meInnerContest = findContestant(meInnerPct, meInner);
+  if(meInnerContest){
+    contests.push({
+      name: meName, layer: '내면', mainTrig: meInner, contestTrig: meInnerContest.trigram,
+      mainPct: meInnerPct[meInner], contestPct: meInnerContest.contestPct, theme: 'navy'
+    });
+  }
+
+  const youOuterContest = findContestant(youOuterPct, youOuter);
+  if(youOuterContest){
+    contests.push({
+      name: youName, layer: '외면', mainTrig: youOuter, contestTrig: youOuterContest.trigram,
+      mainPct: youOuterPct[youOuter], contestPct: youOuterContest.contestPct, theme: 'sky'
+    });
+  }
+
+  const youInnerContest = findContestant(youInnerPct, youInner);
+  if(youInnerContest){
+    contests.push({
+      name: youName, layer: '내면', mainTrig: youInner, contestTrig: youInnerContest.trigram,
+      mainPct: youInnerPct[youInner], contestPct: youInnerContest.contestPct, theme: 'sky'
+    });
+  }
+
+  let innerSection = '';
+  if(contests.length > 0){
+    const cols = 'repeat(2, 1fr)';  // 항상 2열 고정 (3+1 불안정 방지)
+    innerSection = `
+      <div style="margin-top:14px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;">
+          <span style="height:1px;flex:1;background:var(--line);"></span>
+          <span style="font-family:var(--font-display);font-size:.68rem;letter-spacing:2.5px;color:var(--muted);font-weight:700;">INNER NATURE · 함께 지닌 또 다른 결</span>
+          <span style="height:1px;flex:1;background:var(--line);"></span>
+        </div>
+        <div class="guide-grid-2" style="display:grid;grid-template-columns:${cols};gap:12px;">
+          ${contests.map(n => {
+            const gMain = TRIGRAM[n.mainTrig], gAlt = TRIGRAM[n.contestTrig];
+            const accent = n.theme === 'navy' ? '#002D62' : '#8B2E3E';
+            const border = n.theme === 'navy' ? 'rgba(0,45,98,.18)' : 'rgba(139,46,62,.2)';
+            const bgSoft = n.theme === 'navy' ? 'rgba(0,45,98,.025)' : 'rgba(139,46,62,.025)';
+            const traits = INNER_TRAITS[n.contestTrig] || [];
+            return `
+              <div style="background:${bgSoft};border:1px solid ${border};border-radius:12px;padding:16px 18px;">
+                <!-- 헤더: 이름 · 층위 + 주괘↔경합괘 -->
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed ${border};">
+                  <div>
+                    <div style="font-family:var(--font-display);font-size:.9rem;font-weight:700;color:${accent};">${n.name}</div>
+                    <div style="font-family:var(--font-display);font-size:.62rem;color:var(--muted);letter-spacing:1.5px;margin-top:2px;">${n.layer.toUpperCase() === '외면' ? 'OUTER' : 'INNER'} · ${n.layer}</div>
+                  </div>
+                  <div style="flex:1;display:flex;align-items:center;justify-content:flex-end;gap:8px;">
+                    <div style="text-align:center;">
+                      <div style="font-family:serif;font-size:1.1rem;color:${accent};">${gMain.symbol}</div>
+                      <div style="font-family:var(--font-display);font-size:.58rem;color:${accent};letter-spacing:.5px;margin-top:2px;font-weight:700;">${n.mainPct.toFixed(0)}%</div>
+                    </div>
+                    <span style="color:var(--muted);font-size:.8rem;">+</span>
+                    <div style="text-align:center;">
+                      <div style="font-family:serif;font-size:1.1rem;color:var(--muted);">${gAlt.symbol}</div>
+                      <div style="font-family:var(--font-display);font-size:.58rem;color:var(--muted);letter-spacing:.5px;margin-top:2px;">${n.contestPct.toFixed(0)}%</div>
+                    </div>
+                  </div>
+                </div>
+                <!-- 안내 문구 -->
+                <div style="font-family:var(--font-serif);font-size:.83rem;color:var(--text);line-height:1.7;margin-bottom:12px;word-break:keep-all;">
+                  ${n.layer}에서 <strong>${guaLabel(n.mainTrig)}</strong> 뒤에 <strong style="color:${accent};">${guaLabel(n.contestTrig)}</strong>의 결도 비슷한 비중으로 있습니다. 상황에 따라 이 모습이 함께 드러납니다.
+                </div>
+                <!-- 경합괘 특징 3가지 -->
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  ${traits.map(t => `
+                    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff;border-radius:6px;border:1px solid ${border};">
+                      <span style="flex-shrink:0;width:5px;height:5px;border-radius:50%;background:${accent};"></span>
+                      <span style="font-family:var(--font-serif);font-size:.8rem;color:var(--text);">${t}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  return dialogueSection + innerSection;
 }
 
-// 4. 성장 실천 - DB의 advice 활용 + 동적 제안
-function generateGrowthActions(personaData, innateData, meName, youName){
-  const items = [];
+// 4. 성장 실천 - 관계 특성 기반 도식화 (개인 카드 2개 + 공통 실천 원 그리드)
+function generateGrowthActions(personaData, innateData, meName, youName, meOuter, youOuter, meInner, youInner, affinity, resonance, clash){
 
-  if(personaData.advice){
-    items.push(`<strong style="color:var(--navy);">사회적 영역</strong> — ${personaData.advice}`);
+  // 각 괘별 성장 포인트 — 제목 + 3개 핵심 키워드
+  const GROWTH_BY_TRIGRAM = {
+    '건': { title:'주도권 내려놓기', points:['추진력 잠시 멈추기', '상대 속도 존중하기', '결정 함께 내리기'] },
+    '태': { title:'진지함도 품기',   points:['무거운 감정 받아주기', '즐거움 뒤 본심 듣기', '가벼움과 깊이 균형'] },
+    '리': { title:'공감 먼저',       points:['판단보다 이해', '정답보다 마음 살피기', '논리 전에 감정 수용'] },
+    '진': { title:'속도 조절하기',    points:['즉답 전 한 박자 쉬기', '상대가 따라올 여유 주기', '빠른 결정 재검토'] },
+    '손': { title:'자기 표현하기',    points:['분명한 의견 내기', '무조건 맞추지 않기', '자기 경계 지키기'] },
+    '감': { title:'마음 나누기',     points:['침묵이 벽 안 되게', '깊은 생각 조금씩 공유', '먼저 손 내밀기'] },
+    '간': { title:'새로움 시도하기',  points:['익숙함 벗어나기', '변화 함께 받아들이기', '고정관념 유연화'] },
+    '곤': { title:'경계 지키기',     points:['자신의 필요 표현', '과잉 헌신 경계', '피로감 솔직히 말하기'] },
+  };
+
+  // ─── 개인 카드 2개 (좌우) ───
+  const personalCard = (name, trig, theme) => {
+    const growth = GROWTH_BY_TRIGRAM[trig];
+    const g = TRIGRAM[trig];
+    const accent = theme === 'navy' ? '#002D62' : '#8B2E3E';
+    const bgSoft = theme === 'navy' ? 'rgba(0,45,98,.03)' : 'rgba(139,46,62,.03)';
+    const borderColor = theme === 'navy' ? 'rgba(0,45,98,.18)' : 'rgba(139,46,62,.2)';
+    return `
+      <div style="background:${bgSoft};border:1px solid ${borderColor};border-radius:14px;padding:24px 22px;position:relative;">
+        <!-- 헤더: 이름 + 괘 -->
+        <div style="text-align:center;padding-bottom:16px;border-bottom:1px dashed ${borderColor};margin-bottom:18px;">
+          <div style="font-family:var(--font-display);font-size:.7rem;letter-spacing:3px;color:${accent};font-weight:700;margin-bottom:6px;opacity:.75;">PERSONAL TASK</div>
+          <div style="font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--ink);margin-bottom:4px;">${name}</div>
+          <div style="font-family:serif;font-size:1.3rem;color:${accent};line-height:1;">${g.symbol}<span style="font-size:1rem;margin-left:4px;">${g.hanja}</span></div>
+        </div>
+        <!-- 성장 제목 -->
+        <div style="text-align:center;font-family:var(--font-display);font-size:.98rem;font-weight:700;color:${accent};margin-bottom:14px;letter-spacing:-.01em;">
+          ${growth.title}
+        </div>
+        <!-- 체크리스트 3개 -->
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${growth.points.map(p => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#fff;border-radius:8px;border:1px solid ${borderColor};">
+              <span style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid ${accent};display:inline-flex;align-items:center;justify-content:center;color:${accent};font-size:.7rem;font-weight:700;">✓</span>
+              <span style="font-family:var(--font-serif);font-size:.86rem;color:var(--text);line-height:1.5;">${p}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  };
+
+  const personalSection = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:28px;">
+      ${personalCard(meName, meOuter, 'navy')}
+      ${personalCard(youName, youOuter, 'sky')}
+    </div>
+  `;
+
+  // ─── 함께 실천하기 (원형 카드 그리드) ───
+  const commonItems = [];
+
+  // 공명 활용
+  if(resonance && resonance.resonanceScore > 12){
+    const t = resonance.trigram;
+    commonItems.push({
+      icon: '🌿',
+      title: '공통 기반 키우기',
+      color: 'var(--sage)',
+      bg: 'rgba(107,142,90,.06)',
+      border: 'rgba(107,142,90,.25)',
+      body: `두 사람 모두 <strong>${guaLabel(t)}</strong> (${TRIGRAM_TRAIT[t]})을 공유합니다. 이 영역에서 함께하는 활동을 늘려보세요.`
+    });
   }
-  if(innateData.advice){
-    items.push(`<strong style="color:#6B4C9A;">내면 영역</strong> — ${innateData.advice}`);
+
+  // 차이 다루기
+  if(clash && clash.gap > 20){
+    const t = clash.trigram;
+    commonItems.push({
+      icon: '☯',
+      title: '차이 다루기',
+      color: 'var(--gold)',
+      bg: 'rgba(184,146,74,.06)',
+      border: 'rgba(184,146,74,.25)',
+      body: `<strong>${guaLabel(t)}</strong> 영역에서 결이 다릅니다. "틀렸다"가 아닌 "다르다"로 바라봐 주세요.`
+    });
   }
 
-  // 실천 가능한 일상 행동 (공통 제안)
-  items.push(`<strong style="color:var(--sage);">주기적 대화 시간</strong> — 일주일에 한 번, 업무·일정 얘기가 아닌 <strong>서로의 감정과 근황</strong>만 나누는 30분을 확보해보세요. "최근 뭐가 제일 힘들었어?" 한 질문으로 충분합니다.`);
+  // 주기적 대화
+  commonItems.push({
+    icon: '💬',
+    title: '주기적 대화',
+    color: 'var(--navy)',
+    bg: 'rgba(0,45,98,.04)',
+    border: 'rgba(0,45,98,.18)',
+    body: `주 1회, <strong>감정과 근황만 나누는 30분</strong>을 확보하세요. "요즘 뭐가 제일 힘들었어?" 한 질문이면 충분합니다.`
+  });
 
-  items.push(`<strong style="color:var(--sage);">상대의 강점 언어화</strong> — 한 달에 한 번, 상대에게서 발견한 <strong>구체적인 강점</strong> 한 가지를 말로 전하세요. "네가 ~해줘서 고마웠어" — 당연시 여기던 것을 의식적으로 인지하는 연습입니다.`);
+  // 감사의 언어화
+  commonItems.push({
+    icon: '💝',
+    title: '감사 표현하기',
+    color: '#8B2E3E',
+    bg: 'rgba(139,46,62,.04)',
+    border: 'rgba(139,46,62,.2)',
+    body: `월 1회, 상대의 <strong>구체적 강점</strong>을 말로 전하세요. "네가 ~해줘서 고마워" — 당연한 것을 다시 보는 연습.`
+  });
 
-  return '<ul style="margin:0;padding-left:20px;">' + items.map(i => `<li style="margin-bottom:10px;">${i}</li>`).join('') + '</ul>';
+  // 3열 그리드 (항목 수에 따라 자동 조정)
+  // 항상 2열 그리드로 고정 - 3개일 때 3+1 불안정 방지
+  // 모바일은 자동으로 1열로 떨어지도록 media query 없이 repeat(2, 1fr) 사용
+  const cols = 'repeat(2, 1fr)';
+  const commonSection = `
+    <div style="margin-top:10px;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;">
+        <span style="height:1px;flex:1;background:var(--line);"></span>
+        <span style="font-family:var(--font-display);font-size:.72rem;letter-spacing:3px;color:var(--muted);font-weight:700;">SHARED PRACTICES</span>
+        <span style="height:1px;flex:1;background:var(--line);"></span>
+      </div>
+      <div class="guide-grid-2" style="display:grid;grid-template-columns:${cols};gap:12px;">
+        ${commonItems.map(item => `
+          <div style="background:${item.bg};border:1px solid ${item.border};border-radius:12px;padding:18px 16px;text-align:center;display:flex;flex-direction:column;align-items:center;">
+            <!-- 원형 아이콘 -->
+            <div style="width:48px;height:48px;border-radius:50%;background:#fff;border:2px solid ${item.border};display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:10px;box-shadow:0 2px 6px rgba(0,0,0,.04);">
+              ${item.icon}
+            </div>
+            <div style="font-family:var(--font-display);font-weight:700;color:${item.color};font-size:.92rem;margin-bottom:8px;">
+              ${item.title}
+            </div>
+            <div style="font-family:var(--font-serif);font-size:.82rem;color:var(--text);line-height:1.7;word-break:keep-all;">
+              ${item.body}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  return personalSection + commonSection;
 }
 
 // ─── 64괘 에너지 휠 (궁합 리포트 버전) ─────────────────────────
@@ -3298,34 +3760,41 @@ function generateGrowthActions(personaData, innateData, meName, youName){
 // 색상은 나의 괘와 각 괘의 6효 일치도(궁합 점수)에 따라 그라데이션
 
 // 6효 일치도 기반 궁합 점수 (0~100)
-function compat64Score(myBinary, targetBinary){
+// 64괘 개별 궁합 점수 (Raw: 6효 비교 기반)
+// - 같은 괘: 100, 6효 모두 다름: 40 (Raw 범위 40~100, 평균 70)
+// - 정규화 적용: 리포트 상단 친화도와 같은 스케일(중앙 50)로 맞춤
+function compat64ScoreRaw(myBinary, targetBinary){
   if(myBinary === targetBinary) return 100;
   let diff = 0;
   for(let i=0; i<6; i++){
     if(myBinary[i] !== targetBinary[i]) diff++;
   }
-  return 100 - (diff * 10);  // 최대 6효 다름 = 40점, 같으면 100점
+  return 100 - (diff * 10);
 }
 
-// 점수 → 색상 그라데이션 (ver1과 동일하지만 톤다운)
+function compat64Score(myBinary, targetBinary){
+  const raw = compat64ScoreRaw(myBinary, targetBinary);
+  // Z-score 정규화: 측정 평균 70, std 12.2 → 중앙 58±15 스케일
+  // 이렇게 하면 같은 괘(raw 100)는 95점, 1효 다름(raw 90)은 83점 수준
+  const z = (raw - 70) / 12.2;
+  const normalized = SCORE_CENTER + z * SCORE_SPREAD;
+  return Math.round(Math.max(0, Math.min(100, normalized)));
+}
+
+// 점수 → 색상 그라데이션 (종 모양 분포 15/20/30/20/15% 기준)
 function wheelGradient(score){
-  let v = (score - 40) * (100/60);
-  if(v < 0) v = 0;
-  if(v > 100) v = 100;
-  if(v >= 80) return '#3498DB';  // 파랑 - 최상
-  if(v >= 60) return '#2ECC71';  // 초록 - 안정
-  if(v >= 40) return '#F1C40F';  // 노랑 - 평범
-  if(v >= 20) return '#E67E22';  // 주황 - 서먹
-  return '#E74C3C';              // 빨강 - 충돌
+  if(score >= 70) return '#3498DB';  // 파랑 - 최상 (상위 15%)
+  if(score >= 61) return '#2ECC71';  // 초록 - 안정 (15~35%)
+  if(score >= 49) return '#F1C40F';  // 노랑 - 평범 (35~65%)
+  if(score >= 40) return '#E67E22';  // 주황 - 서먹 (65~85%)
+  return '#E74C3C';                  // 빨강 - 충돌 (하위 15%)
 }
 
 function wheelStatus(score){
-  let v = (score - 40) * (100/60);
-  if(v < 0) v = 0;
-  if(v >= 80) return {label:'최상의 조화', color:'#3498DB', icon:'✨'};
-  if(v >= 60) return {label:'안정적 관계', color:'#2ECC71', icon:'🌿'};
-  if(v >= 40) return {label:'평범한 관계', color:'#F1C40F', icon:'⚖️'};
-  if(v >= 20) return {label:'서먹한 관계', color:'#E67E22', icon:'⚠️'};
+  if(score >= 70) return {label:'최상의 조화', color:'#3498DB', icon:'✨'};
+  if(score >= 61) return {label:'안정적 관계', color:'#2ECC71', icon:'🌿'};
+  if(score >= 49) return {label:'평범한 관계', color:'#F1C40F', icon:'⚖️'};
+  if(score >= 40) return {label:'서먹한 관계', color:'#E67E22', icon:'⚠️'};
   return       {label:'충돌 주의',   color:'#E74C3C', icon:'🚨'};
 }
 
